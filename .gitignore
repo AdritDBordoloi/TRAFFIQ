@@ -1,0 +1,70 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+.venv/
+.venv*/
+venv/
+ENV/
+env/
+
+# Weights & Deep Learning Models
+*.pt
+*.onnx
+*.engine
+*.bin
+*.weights
+
+# SQLite Databases & Storage
+*.db
+*.db-journal
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Violation Evidence Captures
+violations/
+*.jpg
+*.jpeg
+*.png
+*.bmp
+
+# Test & Coverage Caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Linter & Type Check Caches
+.mypy_cache/
+.ruff_cache/
+
+# Code Knowledge Graph Artifacts
+.graphify/
+graphify-out/
+*.gexf
+
+# Distribution / Packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Logs, System & IDEs
+*.log
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS Metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Teamwork Agent Scaffolding (internal tooling)
+.agents/

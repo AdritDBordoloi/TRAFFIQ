@@ -1,0 +1,22 @@
+# Core Vision & Deep Learning
+ultralytics>=8.0.0
+opencv-python>=4.8.0
+easyocr>=1.7.0
+lap>=0.5.12
+
+# PyTorch (Install with CUDA support from pytorch.org for GPU acceleration)
+# e.g.: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Numerical & Utilities
+numpy>=1.24.0
+Pillow>=9.5.0
+PyYAML>=6.0
+
+# Code Knowledge Graph Tooling
+graphifyy>=0.1.0
+
+# Testing & Quality Assurance
+pytest>=7.4.0
+pytest-cov>=4.1.0
