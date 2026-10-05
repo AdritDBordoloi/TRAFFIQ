@@ -415,10 +415,94 @@ def log_emergency_event(track_id, vehicle_type, duration, status):
 
 
 # ============================================================================
+# VIDEO SOURCE SELECTION & UPLOAD HANDLERS
+# ============================================================================
+
+def open_video_file_dialog():
+    """Opens a native Windows file explorer dialog to select/upload a video file."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        file_path = filedialog.askopenfilename(
+            title="TRAFFIQ - Select Traffic / Emergency Video File",
+            filetypes=[
+                ("Video Files", "*.mp4 *.avi *.mov *.mkv *.webm *.m4v *.wmv *.flv"),
+                ("All Files", "*.*")
+            ]
+        )
+        root.destroy()
+        return file_path if file_path else None
+    except Exception as e:
+        print(f"[WARN] Could not open file dialog: {e}")
+        return None
+
+
+def select_video_source(cli_source=None, force_upload=False):
+    """
+    Selects video source from CLI argument, file upload dialog, or interactive menu.
+    """
+    # 1. If upload flag specifically requested
+    if force_upload:
+        print("[INFO] Opening File Explorer to select video file...")
+        selected = open_video_file_dialog()
+        if selected and os.path.exists(selected):
+            print(f"[INFO] Selected Video File: {selected}")
+            return selected
+        print("[WARN] No file selected. Defaulting to live webcam 0.")
+        return 0
+
+    # 2. If CLI source argument provided
+    if cli_source is not None:
+        cli_clean = str(cli_source).strip("'\"")
+        if cli_clean.isdigit():
+            return int(cli_clean)
+        if os.path.exists(cli_clean):
+            return cli_clean
+        print(f"[WARN] Specified file '{cli_source}' not found. Please choose an option below:")
+
+    # 3. Interactive prompt if launched with no arguments
+    print("\n" + "=" * 60)
+    print("           TRAFFIQ VIDEO SOURCE SELECTION")
+    print("=" * 60)
+    print("  [1] Live Webcam Feed (Default - Camera Index 0)")
+    print("  [2] Upload / Select Video File (Open File Explorer)")
+    print("  [3] Enter Video File Path Manually")
+    print("=" * 60)
+
+    try:
+        choice = input("Enter choice [1/2/3] (Press Enter for Webcam 0): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        choice = "1"
+
+    if choice == "2":
+        print("[INFO] Opening File Explorer to select video file...")
+        selected = open_video_file_dialog()
+        if selected and os.path.exists(selected):
+            print(f"[INFO] Loaded Video File: {selected}")
+            return selected
+        print("[WARN] No file selected. Defaulting to live webcam 0.")
+        return 0
+    elif choice == "3":
+        try:
+            path_input = input("Enter or drag-and-drop video file path: ").strip("'\"")
+            if os.path.exists(path_input):
+                return path_input
+            print(f"[WARN] File '{path_input}' does not exist. Defaulting to webcam 0.")
+            return 0
+        except Exception:
+            return 0
+    else:
+        return 0
+
+
+# ============================================================================
 # MAIN UNIFIED ENFORCEMENT & PRIORITY PIPELINE
 # ============================================================================
 
-def run_unified_system(camera_index=0):
+def run_unified_system(source=0, loop=True):
     init_unified_db()
 
     # 1. Primary Traffic Tracker: YOLOv8s COCO (Sharp car, motorcycle, bus, truck, bicycle detection)
@@ -443,14 +527,32 @@ def run_unified_system(camera_index=0):
     print("[INFO] Initializing EasyOCR GPU Engine...")
     ocr_reader = easyocr.Reader(['en'], gpu=True)
 
-    # Camera setup (1280x720 DirectShow on Windows)
-    cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW if sys.platform.startswith("win") else cv2.CAP_ANY)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    # 4. Video Source Setup (Supports Webcam Index or Video File Path)
+    is_video_file = False
+    source_str = str(source).strip("'\"")
+
+    if not source_str.isdigit() and os.path.exists(source_str):
+        is_video_file = True
+        source_name = os.path.basename(source_str)
+        print(f"[INFO] Opening Video File: {source_str}")
+        cap = cv2.VideoCapture(source_str)
+    else:
+        cam_idx = int(source_str) if source_str.isdigit() else 0
+        source_name = f"Webcam ({cam_idx})"
+        print(f"[INFO] Opening Live Camera Feed: Index {cam_idx}...")
+        cap = cv2.VideoCapture(cam_idx, cv2.CAP_DSHOW if sys.platform.startswith("win") else cv2.CAP_ANY)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
     if not cap.isOpened():
-        print(f"[ERROR] Could not open camera {camera_index}.")
+        print(f"[ERROR] Could not open video source: {source}")
         return
+
+    # Frame timing for realistic video playback speed
+    video_fps = cap.get(cv2.CAP_PROP_FPS)
+    if not video_fps or video_fps <= 0 or video_fps > 120:
+        video_fps = 30.0
+    target_frame_time = 1.0 / video_fps
 
     # Tracking & State Storage
     track_positions = {}
@@ -483,9 +585,16 @@ def run_unified_system(camera_index=0):
     print("[CONTROLS] Press 't' to toggle Signal manually (disabled during emergency) | 'q' to quit.\n")
 
     while True:
+        frame_start_time = time.time()
         ret, frame = cap.read()
         if not ret:
-            break
+            if is_video_file and loop:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ret, frame = cap.read()
+                if not ret:
+                    break
+            else:
+                break
 
         height, width, _ = frame.shape
         stop_line_y = int(height * 0.55)    # 55% frame height stop line
@@ -803,18 +912,19 @@ def run_unified_system(camera_index=0):
 
         # Top Telemetry HUD Box
         hud_border = (0, 0, 255) if emergency_lock_engaged else stop_line_color
-        cv2.rectangle(frame, (10, 10), (430, 135), (20, 20, 20), -1)
-        cv2.rectangle(frame, (10, 10), (430, 135), hud_border, 2)
+        cv2.rectangle(frame, (10, 10), (450, 155), (20, 20, 20), -1)
+        cv2.rectangle(frame, (10, 10), (450, 155), hud_border, 2)
 
         mode_str = "EMERGENCY OVERRIDE" if emergency_lock_engaged else "NORMAL CYCLE"
         mode_color = (0, 0, 255) if emergency_lock_engaged else (0, 255, 0)
         cv2.putText(frame, f"MODE: {mode_str}", (20, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.52, mode_color, 2)
-        cv2.putText(frame, f"SIGNAL: {light_state}", (270, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.55, stop_line_color, 2)
-        cv2.putText(frame, f"FPS: {fps:.1f}", (20, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
-        cv2.putText(frame, f"Flow Throughput: {len(counted_ids)}", (150, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
-        cv2.putText(frame, f"Violations Logged: {total_violations_count}", (20, 84), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 255), 2)
-        cv2.putText(frame, f"Priority Corridors Cleared: {total_emergencies_cleared}", (20, 108), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
-        cv2.putText(frame, "[Controls: 't' Toggle Signal | 'q' Quit]", (20, 128), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (160, 160, 160), 1)
+        cv2.putText(frame, f"SIGNAL: {light_state}", (280, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.55, stop_line_color, 2)
+        cv2.putText(frame, f"FPS: {fps:.1f}", (20, 56), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+        cv2.putText(frame, f"SRC: {source_name[:18]}", (140, 56), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (200, 200, 200), 1)
+        cv2.putText(frame, f"Flow Throughput: {len(counted_ids)}", (20, 78), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+        cv2.putText(frame, f"Violations Logged: {total_violations_count}", (20, 102), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 255), 2)
+        cv2.putText(frame, f"Priority Corridors Cleared: {total_emergencies_cleared}", (20, 126), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
+        cv2.putText(frame, "[Controls: 't' Toggle Signal | 'q' Quit]", (20, 146), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (160, 160, 160), 1)
 
         # Flashing Emergency Strobe Banner (Alternates Red & Blue)
         if emergency_lock_engaged:
@@ -844,8 +954,16 @@ def run_unified_system(camera_index=0):
 
         cv2.imshow("TRAFFIQ - Unified Enforcement & Priority System", frame)
 
+        # Frame pacing for video files to match natural playback speed
+        if is_video_file:
+            process_duration = time.time() - frame_start_time
+            sleep_needed = target_frame_time - process_duration
+            wait_time = max(1, int(sleep_needed * 1000)) if sleep_needed > 0 else 1
+        else:
+            wait_time = 1
+
         # Keyboard Controls
-        key = cv2.waitKey(1) & 0xFF
+        key = cv2.waitKey(wait_time) & 0xFF
         if key == ord('q'):
             break
         elif key == ord('t'):
@@ -862,4 +980,18 @@ def run_unified_system(camera_index=0):
 
 
 if __name__ == "__main__":
-    run_unified_system(0)
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="TRAFFIQ - Unified Traffic Enforcement & Emergency Priority System"
+    )
+    parser.add_argument("video_file", nargs="?", default=None, help="Path to video file (.mp4, .avi, etc.)")
+    parser.add_argument("-s", "--source", default=None, help="Video file path or webcam index (e.g. 0)")
+    parser.add_argument("-u", "--upload", action="store_true", help="Open Windows File Explorer to browse and upload video")
+    parser.add_argument("--no-loop", action="store_true", help="Do not loop video when it reaches the end")
+
+    args = parser.parse_args()
+
+    input_arg = args.video_file if args.video_file is not None else args.source
+    resolved_source = select_video_source(cli_source=input_arg, force_upload=args.upload)
+
+    run_unified_system(source=resolved_source, loop=not args.no_loop)
