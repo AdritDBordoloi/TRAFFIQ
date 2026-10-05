@@ -568,6 +568,7 @@ def select_video_source(cli_source=None, force_upload=False):
 # ============================================================================
 
 def run_unified_system(source=0, loop=True):
+    global _promoted_emergency_tracks
     init_unified_db()
 
     # 1. Primary Traffic Tracker: YOLOv8s COCO (Sharp car, motorcycle, bus, truck, bicycle detection)
@@ -965,7 +966,9 @@ def run_unified_system(source=0, loop=True):
             checked_ocr_tracks = {t for t in checked_ocr_tracks if t in active_ids}
         if len(_promoted_emergency_tracks) > 200:
             active_ids = {det["track_id"] for det in frame_detections}
-            _promoted_emergency_tracks = {t: val for t, val in _promoted_emergency_tracks.items() if t in active_ids}
+            for t in list(_promoted_emergency_tracks.keys()):
+                if t not in active_ids:
+                    _promoted_emergency_tracks.pop(t, None)
 
         # --------------------------------------------------------------------
         # 6. VISUAL HUD OVERLAYS & BOUNDING BOXES
