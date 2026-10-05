@@ -15,34 +15,35 @@ def test_camera_stream(camera_index=0):
 
     print("[SUCCESS] Camera stream locked. Press 'q' on your keyboard to close the window.")
 
-    while True:
-        ret, frame = cap.read()
+    try:
+        while True:
+            ret, frame = cap.read()
 
-        if not ret:
-            print("[ERROR] Failed to grab frame. Camera may have been disconnected.")
-            break
+            if not ret:
+                print("[ERROR] Failed to grab frame. Camera may have been disconnected.")
+                break
 
-        # Display basic overlay text on the live video feed
-        cv2.putText(
-            frame, 
-            "TRAFFIQ - Camera Stream Online (Press 'q' to exit)", 
-            (20, 30), 
-            cv2.FONT_HERSHEY_SIMPLEX, 
-            0.6, 
-            (0, 255, 0), 
-            2
-        )
+            # Display basic overlay text on the live video feed
+            cv2.putText(
+                frame, 
+                "TRAFFIQ - Camera Stream Online (Press 'q' to exit)", 
+                (20, 30), 
+                cv2.FONT_HERSHEY_SIMPLEX, 
+                0.6, 
+                (0, 255, 0), 
+                2
+            )
 
-        cv2.imshow("TRAFFIQ Camera Diagnostic", frame)
+            cv2.imshow("TRAFFIQ Camera Diagnostic", frame)
 
-        # Press 'q' to break out of the loop and close the feed
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    # Clean release of hardware resources
-    cap.release()
-    cv2.destroyAllWindows()
-    print("[INFO] Camera stream terminated cleanly.")
+            # Press 'q' to break out of the loop and close the feed
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+    finally:
+        # Clean release of hardware resources
+        cap.release()
+        cv2.destroyAllWindows()
+        print("[INFO] Camera stream terminated cleanly.")
 
 if __name__ == "__main__":
     test_camera_stream(0)

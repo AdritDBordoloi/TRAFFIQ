@@ -29,7 +29,10 @@ import os
 import sys
 import re
 import sqlite3
-import winsound
+try:
+    import winsound
+except ImportError:
+    winsound = None
 import threading
 from datetime import datetime
 import torch
@@ -232,10 +235,11 @@ def compute_box_iomin(boxA, boxB):
 def play_emergency_alert():
     """Plays emergency siren/beep in a background thread without stalling video processing."""
     def _run():
-        try:
-            winsound.Beep(1500, 350)
-        except Exception:
-            pass
+        if winsound is not None:
+            try:
+                winsound.Beep(1500, 350)
+            except Exception:
+                pass
     threading.Thread(target=_run, daemon=True).start()
 
 
