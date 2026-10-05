@@ -2,6 +2,7 @@ import cv2
 import time
 import os
 import sys
+import sqlite3
 from datetime import datetime
 from ultralytics import YOLO
 
@@ -12,6 +13,109 @@ TRAFFIC_CLASSES = {
     5: "Bus",
     7: "Truck"
 }
+
+def get_vehicle_semi_crop(frame, box, scale=2.0, min_w=320, min_h=240):
+    """
+    Extracts a semi close-up photo of the vehicle with the vehicle centered in the frame.
+    """
+    height, width = frame.shape[:2]
+    x1, y1, x2, y2 = box
+    w = max(1, x2 - x1)
+    h = max(1, y2 - y1)
+    cx = (x1 + x2) // 2
+    cy = (y1 + y2) // 2
+
+    crop_w = int(w * scale)
+    crop_h = int(h * scale)
+    crop_w = max(crop_w, min_w)
+    crop_h = max(crop_h, min_h)
+
+    if crop_w < int(crop_h * 1.2):
+        crop_w = int(crop_h * 1.2)
+
+    crop_w = min(width, crop_w)
+    crop_h = min(height, crop_h)
+
+    half_w = crop_w // 2
+    half_h = crop_h // 2
+
+    c_x1 = cx - half_w
+    c_x2 = c_x1 + crop_w
+    c_y1 = cy - half_h
+    c_y2 = c_y1 + crop_h
+
+    if c_x1 < 0:
+        c_x2 = min(width, c_x2 - c_x1)
+        c_x1 = 0
+    elif c_x2 > width:
+        c_x1 = max(0, c_x1 - (c_x2 - width))
+        c_x2 = width
+
+    if c_y1 < 0:
+        c_y2 = min(height, c_y2 - c_y1)
+        c_y1 = 0
+    elif c_y2 > height:
+        c_y1 = max(0, c_y1 - (c_y2 - height))
+        c_y2 = height
+
+    return frame[c_y1:c_y2, c_x1:c_x2]
+
+def create_challan_notice(track_id, cls_name, evidence_path, vehicle_dir):
+    """Generates an electronic challan notice receipt text file and logs to database if available."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    fine_amount = 1000  # Fine amount in INR
+    challan_id = int(time.time() * 1000) % 1000000
+
+    # Log to SQLite database if available
+    try:
+        conn = sqlite3.connect("traffiq_enforcement.db")
+        cursor = conn.cursor()
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS challan_records (
+            challan_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            track_id INT NOT NULL,
+            plate_number TEXT NOT NULL,
+            owner_name TEXT NOT NULL,
+            contact_number TEXT NOT NULL,
+            vehicle_model TEXT NOT NULL,
+            violation_type TEXT NOT NULL,
+            fine_amount INT NOT NULL,
+            full_evidence_path TEXT NOT NULL,
+            crop_evidence_path TEXT NOT NULL
+        )
+        """)
+        cursor.execute("""
+        INSERT INTO challan_records (
+            timestamp, track_id, plate_number, owner_name, contact_number, 
+            vehicle_model, violation_type, fine_amount, full_evidence_path, crop_evidence_path
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            timestamp, int(track_id), "PENDING_OCR", "Unverified Owner", "NOT ON FILE",
+            cls_name, "Red Light Signal Violation", fine_amount,
+            evidence_path, ""
+        ))
+        challan_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+    receipt_filename = f"{vehicle_dir}/challan.txt"
+    with open(receipt_filename, "w") as f:
+        f.write("=" * 60 + "\n")
+        f.write("       TRAFFIQ AUTOMATED TRAFFIC ENFORCEMENT NOTICE     \n")
+        f.write("=" * 60 + "\n")
+        f.write(f"Challan Number     : TRFQ-{challan_id:06d}\n")
+        f.write(f"Violation DateTime : {timestamp}\n")
+        f.write(f"Violation Type     : Red Light Disobedience (Section 119/177)\n")
+        f.write(f"Vehicle Track ID   : #{track_id}\n")
+        f.write(f"Vehicle Type       : {cls_name}\n")
+        f.write(f"Fine Amount Due    : INR {fine_amount}\n")
+        f.write(f"Vehicle Evidence   : {evidence_path}\n")
+        f.write("=" * 60 + "\n")
+
+    return receipt_filename, challan_id
 
 def run_violation_detection(camera_index=0):
     # Ensure folder exists for saving snapshot evidence
@@ -111,17 +215,21 @@ def run_violation_detection(camera_index=0):
                         violated_ids.add(track_id)
                         violation_count += 1
 
-                        # Save evidence crop with timestamp
+                        # Save evidence crop with timestamp in dedicated vehicle folder
                         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        crop_y1 = max(0, y1 - 10)
-                        crop_y2 = min(height, y2 + 10)
-                        crop_x1 = max(0, x1 - 10)
-                        crop_x2 = min(width, x2 + 10)
-                        evidence_crop = frame[crop_y1:crop_y2, crop_x1:crop_x2]
+                        vehicle_dir = f"violations/vehicle_ID{track_id}_{timestamp_str}"
+                        os.makedirs(vehicle_dir, exist_ok=True)
 
-                        filename = f"violations/violation_ID{track_id}_{timestamp_str}.jpg"
-                        cv2.imwrite(filename, evidence_crop)
-                        print(f"[ALERT] Red-Light Violation logged for ID:{track_id}! Evidence: {filename}")
+                        evidence_crop = get_vehicle_semi_crop(frame, (x1, y1, x2, y2))
+                        filename = f"{vehicle_dir}/vehicle_image.jpg"
+                        if evidence_crop.size > 0:
+                            cv2.imwrite(filename, evidence_crop)
+                        else:
+                            cv2.imwrite(filename, frame)
+
+                        # Generate challan notice inside vehicle folder
+                        receipt_path, challan_id = create_challan_notice(track_id, cls_name, filename, vehicle_dir)
+                        print(f"[ALERT] Red-Light Violation logged for ID:{track_id}! Challan: TRFQ-{challan_id:06d} | Receipt: {receipt_path}")
 
                 # Bounding box rendering: Bright Red if violated, otherwise standard
                 if track_id in violated_ids:
