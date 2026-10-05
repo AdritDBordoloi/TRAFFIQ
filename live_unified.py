@@ -49,8 +49,10 @@ import easyocr
 
 def init_unified_db():
     """Initializes SQLite schema for vehicle registry, challans, and emergency events."""
-    conn = sqlite3.connect("traffiq_enforcement.db")
+    conn = sqlite3.connect("traffiq_enforcement.db", timeout=30.0)
     cursor = conn.cursor()
+    cursor.execute("PRAGMA journal_mode = WAL;")
+    cursor.execute("PRAGMA synchronous = NORMAL;")
 
     # 1. RTO Registry Table (Simulating government vehicle database)
     cursor.execute("""
@@ -232,8 +234,19 @@ def compute_box_iomin(boxA, boxB):
     return interArea / float(minArea) if minArea > 0 else 0.0
 
 
-def play_emergency_alert():
-    """Plays emergency siren/beep in a background thread without stalling video processing."""
+_last_emergency_alert_time = 0.0
+_alert_lock = threading.Lock()
+
+
+def play_emergency_alert(cooldown: float = 2.0):
+    """Plays emergency siren/beep in a background thread without stalling video processing, rate-limited by cooldown."""
+    global _last_emergency_alert_time
+    now = time.time()
+    with _alert_lock:
+        if now - _last_emergency_alert_time < cooldown:
+            return
+        _last_emergency_alert_time = now
+
     def _run():
         if winsound is not None:
             try:
@@ -307,8 +320,9 @@ def check_vehicle_emergency_text(crop, ocr_reader):
 
 def lookup_vehicle_owner(plate_number):
     """Matches detected plate against the RTO database."""
-    conn = sqlite3.connect("traffiq_enforcement.db")
+    conn = sqlite3.connect("traffiq_enforcement.db", timeout=30.0)
     cursor = conn.cursor()
+    cursor.execute("PRAGMA journal_mode = WAL;")
 
     # 1. Exact match
     cursor.execute("""
@@ -353,8 +367,9 @@ def issue_challan(track_id, plate, owner_data, full_img_path, crop_img_path, veh
     fine_amount = 1000  # Fine amount in INR
 
     # 1. Insert into SQLite Database
-    conn = sqlite3.connect("traffiq_enforcement.db")
+    conn = sqlite3.connect("traffiq_enforcement.db", timeout=30.0)
     cursor = conn.cursor()
+    cursor.execute("PRAGMA journal_mode = WAL;")
     cursor.execute("""
     INSERT INTO challan_records (
         timestamp, track_id, plate_number, owner_name, contact_number, 
@@ -404,8 +419,9 @@ def issue_challan(track_id, plate, owner_data, full_img_path, crop_img_path, veh
 def log_emergency_event(track_id, vehicle_type, duration, status):
     """Logs an emergency priority event to the SQLite database."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    conn = sqlite3.connect("traffiq_enforcement.db")
+    conn = sqlite3.connect("traffiq_enforcement.db", timeout=30.0)
     cursor = conn.cursor()
+    cursor.execute("PRAGMA journal_mode = WAL;")
     cursor.execute("""
     INSERT INTO emergency_events (timestamp, track_id, vehicle_type, override_duration_sec, status)
     VALUES (?, ?, ?, ?, ?)
@@ -867,11 +883,13 @@ def run_unified_system(source=0, loop=True):
                     }
                     banner_display_time = time.time()
 
-        # Clean expired track positions
+        # Clean expired track positions while retaining active tracks
         if len(track_positions) > 500:
-            track_positions.clear()
+            active_ids = {det["track_id"] for det in frame_detections}
+            track_positions = {t: pos for t, pos in track_positions.items() if t in active_ids}
         if len(checked_ocr_tracks) > 500:
-            checked_ocr_tracks.clear()
+            active_ids = {det["track_id"] for det in frame_detections}
+            checked_ocr_tracks = {t for t in checked_ocr_tracks if t in active_ids}
 
         # --------------------------------------------------------------------
         # 6. VISUAL HUD OVERLAYS & BOUNDING BOXES
