@@ -540,13 +540,14 @@ def run_unified_system(source=0, loop=True):
     # 2. Emergency Priority Detector: YOLOv8s Open Images V7 (Multi-Label Native Ambulance Engine)
     print("[INFO] Loading Emergency Priority Detector: YOLOv8s-OIV7 (Ambulance)...")
     oiv7_model = YOLO("yolov8s-oiv7.pt")
-    device = torch.device(0 if torch.cuda.is_available() else "cpu")
+    device_str = 0 if torch.cuda.is_available() else "cpu"
+    device = torch.device(device_str)
     oiv7_model.to(device)
     print(f"[INFO] Emergency Priority Detector loaded on {device} (Multi-Label NMS active, Class 6: Ambulance).")
 
     # 3. EasyOCR GPU Engine
-    print("[INFO] Initializing EasyOCR GPU Engine...")
-    ocr_reader = easyocr.Reader(['en'], gpu=True)
+    print(f"[INFO] Initializing EasyOCR Engine (GPU={torch.cuda.is_available()})...")
+    ocr_reader = easyocr.Reader(['en'], gpu=torch.cuda.is_available())
 
     # 4. Video Source Setup (Supports Webcam Index or Video File Path)
     is_video_file = False
@@ -635,7 +636,7 @@ def run_unified_system(source=0, loop=True):
             classes=list(COCO_TRAFFIC_CLASSES.keys()),
             conf=0.25,
             imgsz=640,
-            device=0,
+            device=device_str,
             verbose=False
         )[0]
 

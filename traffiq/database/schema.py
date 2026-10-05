@@ -84,6 +84,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
     cursor.execute(CREATE_VEHICLE_REGISTRY_SQL)
     cursor.execute(CREATE_CHALLAN_RECORDS_SQL)
 
+    # Ensure schema has all evidence and contact columns for compatibility
+    cursor.execute("PRAGMA table_info(challan_records)")
+    existing_cols = {row[1] for row in cursor.fetchall()}
+    for col in ["contact_number", "vehicle_model", "full_evidence_path", "crop_evidence_path", "evidence_path"]:
+        if col not in existing_cols:
+            try:
+                cursor.execute(f"ALTER TABLE challan_records ADD COLUMN {col} TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+
     for index_stmt in CREATE_INDEXES_SQL:
         cursor.execute(index_stmt)
 
