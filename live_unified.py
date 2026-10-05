@@ -320,11 +320,12 @@ def lookup_vehicle_owner(plate_number):
 
     # 2. Substring fallback (handles slight OCR prefixes/suffixes)
     if not row and len(plate_number) >= 4:
+        escaped_plate = plate_number.replace("/", "//").replace("%", "/%").replace("_", "/_")
         cursor.execute("""
             SELECT owner_name, contact_number, vehicle_model, registration_city 
             FROM vehicle_registry 
-            WHERE plate_number LIKE ?
-        """, (f"%{plate_number}%",))
+            WHERE plate_number LIKE ? ESCAPE '/'
+        """, (f"%{escaped_plate}%",))
         row = cursor.fetchone()
 
     conn.close()
@@ -809,12 +810,15 @@ def run_unified_system(source=0, loop=True):
                     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
                     # Dedicated per-vehicle evidence directory
-                    vehicle_dir = f"violations/vehicle_ID{t_id}_{timestamp_str}"
+                    base_violations_dir = os.path.realpath("violations")
+                    vehicle_dir = os.path.realpath(os.path.join(base_violations_dir, f"vehicle_ID{int(t_id)}_{timestamp_str}"))
+                    if not vehicle_dir.startswith(base_violations_dir + os.sep) and vehicle_dir != base_violations_dir:
+                        vehicle_dir = os.path.join(base_violations_dir, f"vehicle_ID{int(t_id)}_{timestamp_str}")
                     os.makedirs(vehicle_dir, exist_ok=True)
 
                     # 1. Semi close-up vehicle photo centered on subject
                     vehicle_semi_crop = get_vehicle_semi_crop(frame, box)
-                    vehicle_evidence_path = f"{vehicle_dir}/vehicle_image.jpg"
+                    vehicle_evidence_path = os.path.join(vehicle_dir, "vehicle_image.jpg")
                     if vehicle_semi_crop.size > 0:
                         cv2.imwrite(vehicle_evidence_path, vehicle_semi_crop)
                     else:
@@ -827,19 +831,23 @@ def run_unified_system(source=0, loop=True):
                     crop_x1 = max(0, x1 - 10)
                     crop_x2 = min(width, x2 + 10)
                     plate_crop = frame[crop_y1:crop_y2, crop_x1:crop_x2]
-                    plate_crop_path = f"{vehicle_dir}/plate_crop.jpg"
+                    plate_crop_path = os.path.join(vehicle_dir, "plate_crop.jpg")
 
                     detected_plate = "UNKNOWN"
                     if plate_crop.size > 0:
                         cv2.imwrite(plate_crop_path, plate_crop)
-                        ocr_data = ocr_reader.readtext(plate_crop)
-                        candidates = []
-                        for (_, text, prob) in ocr_data:
-                            cleaned = clean_plate_text(text)
-                            if len(cleaned) >= 4 and prob > 0.3:
-                                candidates.append(cleaned)
-                        if candidates:
-                            detected_plate = max(candidates, key=len)
+                        try:
+                            ocr_data = ocr_reader.readtext(plate_crop)
+                            candidates = []
+                            for (_, text, prob) in ocr_data:
+                                cleaned = clean_plate_text(text)
+                                if len(cleaned) >= 4 and prob > 0.3:
+                                    candidates.append(cleaned)
+                            if candidates:
+                                detected_plate = max(candidates, key=len)
+                        except Exception as e:
+                            print(f"[WARN] EasyOCR plate reading failed for Track #{t_id}: {e}")
+                            detected_plate = "UNKNOWN"
 
                     # 3. RTO Database lookup & E-Challan generation
                     owner_info = lookup_vehicle_owner(detected_plate)
