@@ -18,10 +18,11 @@
 3. [Hardware Requirements & Acceleration](#hardware-requirements--acceleration)
 4. [Installation & Setup](#installation--setup)
 5. [Operational Modes & CLI Usage](#operational-modes--cli-usage)
-6. [Code Knowledge Graph (Graphifyy)](#code-knowledge-graph-graphifyy)
-7. [Testing & Verification Guide](#testing--verification-guide)
-8. [Repository Structure](#repository-structure)
-9. [Contributing & License](#contributing--license)
+6. [Web Dashboard & Standalone Pipeline](#web-dashboard--standalone-pipeline)
+7. [Code Knowledge Graph (Graphifyy)](#code-knowledge-graph-graphifyy)
+8. [Testing & Verification Guide](#testing--verification-guide)
+9. [Repository Structure](#repository-structure)
+10. [Contributing & License](#contributing--license)
 
 ---
 
@@ -272,6 +273,23 @@ When running with GUI windows enabled (`--no-gui` omitted):
 
 ---
 
+## Web Dashboard & Standalone Pipeline
+
+```bash
+python run_dashboard.py --source 0 --port 8000        # http://127.0.0.1:8000  (--host, --device, --fine, --signal-duration, --auto-demo)
+python live_unified.py sample_traffic.mp4              # OpenCV window; -u opens a file picker, --no-loop stops at EOF
+```
+
+- **Dashboard** (`traffiq/web`, `frontend/`): live MJPEG feed, telemetry (`/api/state`, `/api/events`, `/api/challans`),
+  manual signal toggle, and demo triggers (`/api/demo/violation`, `/api/demo/ambulance`). Real detections are issued through the
+  same `ChallanIssuer` as the CLI; demo records are labelled `(Demo)` in `challan_records` / `emergency_events`.
+- **Ambulance priority**: a second YOLOv8s-OIV7 model (`yolov8s-oiv7.pt`, class 6) promotes an overlapping car/bus/truck
+  track to *Ambulance* (`traffiq/vision/ambulance.py`) and holds the signal GREEN until it clears the exit line or times out.
+- The CLI flags `--priority` / `--topology` and the `AdaptiveIntersectionController` / `FourWayVideoProcessor` classes are
+  implemented and unit-tested but **not yet wired into the CLI modes or the dashboard**.
+
+---
+
 ## Code Knowledge Graph (Graphifyy)
 
 TRAFFIQ integrates [**Graphifyy**](https://github.com/graphifyy/graphifyy) (`graphify`) to generate an interactive, queryable code knowledge graph mapping all module dependencies, function calls, class hierarchies, and dataflow paths across the codebase.
@@ -319,11 +337,14 @@ tests/
 │   ├── test_text_cleaning.py
 │   └── test_tripwire_math.py
 ├── tier2_component/        # Tier 2: Component tests (synthetic frames & mocks)
+│   ├── test_adaptive_controller.py
 │   ├── test_database_crud.py
+│   ├── test_four_way_video.py
 │   ├── test_ocr_fallback.py
 │   ├── test_plate_preprocessing.py
 │   ├── test_plate_roi.py
-│   └── test_signal_controller.py
+│   ├── test_signal_controller.py
+│   └── test_web_api.py
 ├── tier3_sanitization/     # Tier 3: Database serialization & memory bounds
 │   ├── test_db_migration.py
 │   ├── test_db_serialization.py
@@ -364,7 +385,7 @@ python scripts/verify_all.py
 The script verifies:
 1. **Data Sanitization**: 100% of rows in `challan_records` have integer `track_id` values (0 binary blobs).
 2. **License Plate OCR**: Dedicated ROI cropping (lower 40–50% band) and `("UNKNOWN", 0.0)` fallback.
-3. **Clean Package Architecture**: All 18 modules under `traffiq/` import cleanly.
+3. **Clean Package Architecture**: Every module under `traffiq/` (auto-discovered) imports cleanly.
 4. **Unified CLI Launcher**: `python main.py --help` exits with code 0 and displays all operational modes.
 5. **Graphifyy Tooling**: `graphify --version` executes cleanly.
 6. **Repository & Git Hygiene**: Standard documentation exists and `git status` exposes zero binaries or model weights.
@@ -373,53 +394,39 @@ The script verifies:
 
 ## Repository Structure
 
+> This tree is the single source of truth for project layout (CONTRIBUTING.md and PROJECT.md point here).
+
 ```
 TRAFFIQ/
-├── main.py                     # Unified CLI entrypoint
-├── pyproject.toml              # PEP 517/621 packaging metadata
-├── requirements.txt            # Runtime & development dependencies
-├── LICENSE                     # MIT License (2026)
-├── CONTRIBUTING.md             # Contributor guidelines & code standards
-├── README.md                   # System documentation
-├── .gitignore                  # Git hygiene rules
-├── check_gpu.py                # Preflight hardware diagnostic script
+├── main.py                     # Unified CLI entrypoint (traffiq.cli.app:main)
+├── run_dashboard.py            # Web dashboard launcher (Flask + MJPEG)
+├── live_unified.py             # Standalone enforcement + ambulance-priority pipeline (OpenCV window)
+├── bench.py                    # Performance benchmark (stream read, inference, pipeline FPS)
 ├── init_db.py                  # RTO database initialization & seeding
-├── test_camera.py              # Camera stream diagnostic utility
-├── traffiq/                    # Core modular Python package
-│   ├── __init__.py             # Package version (__version__ = "1.0.0")
-│   ├── config/                 # Centralized configuration dataclass
-│   │   ├── __init__.py
-│   │   └── settings.py         # TraffiqConfig dataclass & parameter validation
-│   ├── database/               # SQLite database & RTO registry
-│   │   ├── __init__.py
-│   │   ├── connection.py       # SQLite connection manager & numpy int adapter
-│   │   ├── repository.py       # RTO lookup & challan logging (native int)
-│   │   └── migration.py        # In-place blob-to-int sanitization & verification
-│   ├── vision/                 # Computer vision & trajectory tracking
-│   │   ├── __init__.py
-│   │   ├── camera.py           # Safe CameraStream context manager (try...finally)
-│   │   ├── detector.py         # YOLOv8 vehicle detector (CUDA GPU / CPU)
-│   │   ├── tracker.py          # ByteTrack wrapper with bounded TTL trajectory cache
-│   │   └── tripwire.py         # Virtual counting stop-line & crossing math
-│   ├── enforcement/            # Signal, violation, plate OCR & challans
-│   │   ├── __init__.py
-│   │   ├── signal.py           # TrafficSignal state machine & manual toggle
-│   │   ├── violation.py        # Stop-line red-light infraction evaluator
-│   │   ├── ocr.py              # Plate ROI isolation, CLAHE preproc & EasyOCR
-│   │   └── challan.py          # ChallanIssuer & HUD banner alerts
-│   └── cli/                    # CLI dispatcher
-│       ├── __init__.py
-│       └── app.py              # Argument parser & operational mode dispatchers
-├── tests/                      # 4-Tier automated test suite
-│   ├── conftest.py             # Shared fixtures & synthetic test frames
-│   ├── tier1_unit/             # Unit tests (imports, config, math, parsing)
-│   ├── tier2_component/        # Component tests (ROI, preprocessing, signal)
-│   ├── tier3_sanitization/     # Database integrity & memory bounds
-│   └── tier4_e2e_integration/  # E2E CLI, repository hygiene & graphify tests
-├── scripts/
-│   └── verify_all.py           # Standalone zero-dependency verification runner
-└── graphify-out/               # Generated code knowledge graph outputs
+├── pyproject.toml              # PEP 517/621 packaging metadata
+├── requirements.txt            # Runtime & dev dependencies (CI installs this)
+├── LICENSE / CONTRIBUTING.md / PROJECT.md / README.md
+├── traffiq/                    # Core Python package
+│   ├── config/settings.py      # TraffiqConfig dataclass & validation
+│   ├── database/               # connection.py (adapters/WAL), repository.py (RTO + challans),
+│   │                           #   schema.py (DDL + seed), migration.py (blob-to-int sanitization)
+│   ├── vision/                 # camera.py (CameraStream), detector.py (YOLO), tracker.py (ByteTrack + TTL),
+│   │                           #   tripwire.py (stop-line), ambulance.py (OIV7 detector + match rule),
+│   │                           #   four_way.py (2x2 / multi-stream approach processor)
+│   ├── enforcement/            # signal.py (timed signal), adaptive_signal.py (4-way adaptive controller),
+│   │                           #   violation.py, ocr.py (plate ROI + EasyOCR), challan.py (issuer + HUD)
+│   ├── web/                    # engine.py (DashboardEngine thread), server.py (Flask REST + MJPEG)
+│   └── cli/app.py              # Argument parser & mode dispatchers
+├── frontend/                   # Dashboard UI (index.html, style.css, app.js)
+├── tests/                      # 4-tier test suite (tier1_unit ... tier4_e2e_integration, conftest.py)
+├── scripts/                    # verify_all.py (acceptance runner), migrate_db.py (blob-to-int repair)
+├── docs/GRAPHIFY.md            # Knowledge-graph tooling guide
+├── graphify/ + graphifyy/      # Local AST knowledge-graph tool (graphifyy is a shim kept for test contracts)
+└── graphify-out/               # Generated graph artifacts (git-ignored)
 ```
+
+Git-ignored local data: `.venv/`, `*.pt` weights, `*.db`, `violations/`, `uploads/`. See `.cursorignore` /
+`.aidigestignore` for the paths AI tools should skip.
 
 ---
 

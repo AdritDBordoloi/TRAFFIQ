@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TRAFFIQ — AI Traffic Monitoring & E-Challan Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Fullscreen Emergency Green Corridor Banner -->
+  <div id="emergencyBanner" class="emergency-banner hidden">
+    <div class="banner-content">
+      <span class="emergency-icon">&#128657;</span>
+      <span class="emergency-text">AMBULANCE DETECTED &mdash; GREEN CORRIDOR ACTIVE</span>
+      <span class="emergency-sub">SIGNAL OVERRIDE ENGAGED &bull; INTERSECTION CLEARED</span>
+    </div>
+  </div>
+
+  <!-- Screen Border Flash Overlay (Violation = Red, Emergency = Green) -->
+  <div id="screenBorderFlash" class="screen-flash"></div>
+
+  <!-- Reconnecting Warning Badge -->
+  <div id="reconnectingBadge" class="reconnecting-badge hidden">
+    <span class="badge-dot"></span> Reconnecting to TRAFFIQ Engine...
+  </div>
+
+  <div class="dashboard-container">
+    
+    <!-- 1. Header Zone -->
+    <header class="dashboard-header">
+      <div class="header-left">
+        <div class="logo-group">
+          <span class="logo-accent">&#9889;</span>
+          <h1 class="logo-title">TRAFFIQ</h1>
+        </div>
+        <div class="header-divider"></div>
+        <span class="header-tagline">AI-Powered Smart Traffic Monitoring &amp; E-Challan Enforcement</span>
+      </div>
+
+      <div class="header-right">
+        <div class="live-pill">
+          <span class="live-indicator"></span>
+          <span class="live-text">LIVE FEED</span>
+        </div>
+        <div class="clock-display" id="clockDisplay">12:00:00 PM</div>
+      </div>
+    </header>
+
+    <!-- 2. Main Workspace Grid (Left Feed ~65%, Right Stats ~35%) -->
+    <main class="dashboard-main">
+      
+      <!-- Left Column: Video Feed -->
+      <section class="feed-column">
+        <div class="card feed-card">
+          <div class="feed-header">
+            <span class="feed-title">ROADWAY CAMERA &bull; INTERSECTION CAM 01</span>
+            <span class="feed-fps" id="fpsDisplay">FPS: 0.0</span>
+          </div>
+          <div class="video-wrapper">
+            <img id="videoFeed" src="/video_feed" alt="TRAFFIQ Live Stream" class="video-player">
+            <!-- Feed Watermark Overlay -->
+            <div class="feed-overlay-badge">EDGE AI ACCELERATED &bull; NVIDIA RTX 4060</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Signal + Counters + Latest Challan -->
+      <section class="stats-column">
+        
+        <!-- Signal & Countdown Widget -->
+        <div class="card signal-card">
+          <div class="signal-wrapper">
+            <div id="signalLight" class="traffic-light green">
+              <span id="signalIcon" class="signal-icon">&#10004;</span>
+            </div>
+            <div class="signal-info">
+              <div class="signal-label-row">
+                <span class="signal-heading">TRAFFIC SIGNAL</span>
+                <span id="signalLockBadge" class="lock-badge hidden">&#128274; LOCKED</span>
+              </div>
+              <div class="signal-state-text" id="signalStateText">PHASE: GREEN</div>
+              <div class="countdown-row">
+                <span class="countdown-value" id="signalCountdown">08</span>
+                <span class="countdown-unit">SECONDS REMAINING</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 Large Metric Cards (2x2 Grid) -->
+        <div class="metrics-grid">
+          <div class="card metric-card">
+            <div class="metric-label">TOTAL VEHICLES</div>
+            <div class="metric-value text-blue" id="counterVehicles">0</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">VIOLATIONS DETECTED</div>
+            <div class="metric-value text-red" id="counterViolations">0</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">EMERGENCY CORRIDORS</div>
+            <div class="metric-value text-green" id="counterEmergencies">0</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">TOTAL FINES (INR)</div>
+            <div class="metric-value text-amber" id="counterFines">&#8377;0</div>
+          </div>
+        </div>
+
+        <!-- Latest Challan Card -->
+        <div class="card challan-card" id="latestChallanCard">
+          <div class="challan-header">
+            <span class="challan-title">LATEST E-CHALLAN DISPATCH</span>
+            <span class="challan-status" id="challanStatusBadge">ACTIVE</span>
+          </div>
+
+          <div class="challan-body" id="challanBody">
+            <div class="plate-preview-box">
+              <img id="challanPlateImg" src="" alt="License Plate" class="plate-crop-img hidden">
+              <div id="platePlaceholder" class="plate-placeholder">WAITING FOR INFRACTION...</div>
+            </div>
+            <div class="challan-details">
+              <div class="plate-number" id="challanPlateText">--------</div>
+              <div class="challan-meta-row">
+                <span class="meta-label">Owner:</span>
+                <span class="meta-value" id="challanOwnerText">&mdash;</span>
+              </div>
+              <div class="challan-meta-row">
+                <span class="meta-label">Vehicle:</span>
+                <span class="meta-value" id="challanModelText">&mdash;</span>
+              </div>
+              <div class="challan-meta-row">
+                <span class="meta-label">Offense:</span>
+                <span class="meta-value text-red" id="challanOffenseText">&mdash;</span>
+              </div>
+              <div class="challan-fine-badge" id="challanFineText">PENALTY: INR 1,000</div>
+            </div>
+          </div>
+
+          <!-- History Strip: Last 3 Challans -->
+          <div class="challan-history-strip">
+            <span class="history-label">RECENT:</span>
+            <div id="challanHistoryContainer" class="history-items">
+              <span class="history-empty">No recent infractions</span>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- 3. Footer Pipeline & Exhibition Control Strip -->
+    <footer class="dashboard-footer">
+      <div class="pipeline-breadcrumb">
+        <span class="breadcrumb-label">PIPELINE:</span>
+        <div class="pipeline-stage active" id="stageCamera">1. Camera</div>
+        <span class="stage-arrow">&rsaquo;</span>
+        <div class="pipeline-stage" id="stageDetect">2. Detect (YOLOv8)</div>
+        <span class="stage-arrow">&rsaquo;</span>
+        <div class="pipeline-stage" id="stageTrack">3. ByteTrack</div>
+        <span class="stage-arrow">&rsaquo;</span>
+        <div class="pipeline-stage" id="stageViolation">4. Stop-Line Eval</div>
+        <span class="stage-arrow">&rsaquo;</span>
+        <div class="pipeline-stage" id="stageOcr">5. Plate OCR</div>
+        <span class="stage-arrow">&rsaquo;</span>
+        <div class="pipeline-stage" id="stageChallan">6. e-Challan DB</div>
+      </div>
+
+      <div class="demo-controls">
+        <button id="btnToggleSignal" class="btn btn-secondary">&#128337; Toggle Signal</button>
+        <button id="btnSimulateViolation" class="btn btn-danger">&#9888; Simulate Violation</button>
+        <button id="btnSimulateAmbulance" class="btn btn-success">&#128657; Simulate Ambulance</button>
+        <button id="btnResetCounters" class="btn btn-outline">&#8635; Reset</button>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- Simulated SMS Notification Bubble Toast -->
+  <div id="smsNotificationToast" class="sms-toast hidden">
+    <div class="sms-icon">&#128241;</div>
+    <div class="sms-content">
+      <div class="sms-title">VAHAN / E-CHALLAN DISPATCHED</div>
+      <div class="sms-body" id="smsToastBody">Notice TRFQ-000001 sent to owner. Fine: INR 1,000.</div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

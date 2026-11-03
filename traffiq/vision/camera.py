@@ -6,6 +6,8 @@ Provides context-managed acquisition and deterministic resource release.
 from __future__ import annotations
 
 import sys
+import threading
+import time
 from typing import Generator, Optional, Tuple, Union
 import cv2
 import numpy as np
@@ -16,7 +18,7 @@ class CameraStream:
     Context-managed camera stream wrapper around cv2.VideoCapture.
     Guarantees resource release (cap.release() and cv2.destroyAllWindows()) in finally blocks,
     handles Windows DirectShow (cv2.CAP_DSHOW), custom resolution configuration,
-    and safe frame reading.
+    hardware buffer size tuning, optional threaded acquisition, and safe frame reading.
     """
 
     def __init__(
@@ -26,6 +28,7 @@ class CameraStream:
         height: int = 720,
         api_preference: Optional[int] = None,
         auto_open: bool = True,
+        threaded: bool = False,
     ) -> None:
         """
         Initialize CameraStream with capture source and target resolution.
@@ -46,7 +49,13 @@ class CameraStream:
         self.width = int(width)
         self.height = int(height)
         self.api_preference = api_preference
+        self.threaded = bool(threaded)
         self.cap: Optional[cv2.VideoCapture] = None
+
+        self._thread: Optional[threading.Thread] = None
+        self._thread_running = False
+        self._latest_frame: Optional[np.ndarray] = None
+        self._frame_lock = threading.Lock()
 
         # Determine default API backend on Windows
         if self.api_preference is None and isinstance(self.source, int):
@@ -75,8 +84,22 @@ class CameraStream:
                 self.cap = cv2.VideoCapture(self.source)
 
             if self.cap.isOpened():
+                # Hardware buffer size 1 to minimize latency and frame queue overhead
+                try:
+                    self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                except Exception:
+                    pass
+                # On Windows with live camera, request MJPG fourcc for high USB throughput
+                if sys.platform.startswith("win") and isinstance(self.source, int):
+                    try:
+                        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+                    except Exception:
+                        pass
                 self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(self.width))
                 self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(self.height))
+
+                if self.threaded:
+                    self._start_thread()
         except Exception:
             self.release()
             raise
@@ -87,6 +110,29 @@ class CameraStream:
         """Return True if the video capture stream is currently open."""
         return bool(self.cap is not None and self.cap.isOpened())
 
+    def _start_thread(self) -> None:
+        """Start background daemon thread for continuous frame reading."""
+        if not self._thread_running and self.cap is not None and self.cap.isOpened():
+            self._thread_running = True
+            self._thread = threading.Thread(target=self._reader_loop, daemon=True, name="CameraStreamReader")
+            self._thread.start()
+
+    def _reader_loop(self) -> None:
+        """Dedicated background reader loop updating the latest frame buffer."""
+        while self._thread_running and self.cap is not None and self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if ret and frame is not None:
+                with self._frame_lock:
+                    self._latest_frame = frame
+            elif isinstance(self.source, str) and not str(self.source).isdigit():
+                try:
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                except Exception:
+                    pass
+                time.sleep(0.005)
+            else:
+                time.sleep(0.005)
+
     def read(self) -> Tuple[bool, Optional[np.ndarray]]:
         """
         Read a single frame from the stream.
@@ -94,6 +140,19 @@ class CameraStream:
         Returns:
             Tuple of (success_boolean, frame_array_or_None).
         """
+        if self.threaded:
+            if self._latest_frame is None and self._thread_running:
+                for _ in range(50):
+                    with self._frame_lock:
+                        if self._latest_frame is not None:
+                            break
+                    time.sleep(0.005)
+
+            with self._frame_lock:
+                if self._latest_frame is not None:
+                    return True, self._latest_frame
+            return False, None
+
         if self.cap is None or not self.cap.isOpened():
             return False, None
 
@@ -107,6 +166,11 @@ class CameraStream:
         Deterministically release video capture handle and destroy all GUI windows.
         Always executed inside a try...finally block.
         """
+        self._thread_running = False
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=1.0)
+        self._thread = None
+
         try:
             if self.cap is not None:
                 self.cap.release()

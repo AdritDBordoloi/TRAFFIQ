@@ -1,0 +1,21 @@
+# Same exclusions as .cursorignore, for ai-digest / repo-to-prompt style tools.
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+graphify-out/
+uploads/
+violations/
+*.pt
+*.db
+*.db-wal
+*.db-shm
+*.jpg
+*.png
+*.mp4
+AUDIT_REPORT.md
+CLEANUP_REPORT.md
+TEST_INFRA.md
+TEST_READY.md

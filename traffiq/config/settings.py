@@ -5,7 +5,7 @@ Centralized configuration management for the TRAFFIQ system.
 from __future__ import annotations
 
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, fields
 from typing import Any, Dict, Optional, Union
 
 
@@ -28,6 +28,9 @@ class TraffiqConfig:
     max_frames: Optional[int] = None
     tracker: str = "bytetrack.yaml"
     imgsz: int = 640
+    priority_model_path: str = "yolov8s-oiv7.pt"
+    ambulance_conf: float = 0.08
+    topology: str = "single"
 
     def __post_init__(self) -> None:
         """Validate and coerce configuration parameters."""
@@ -81,6 +84,11 @@ class TraffiqConfig:
 
         self.tracker = str(self.tracker).strip()
         self.imgsz = int(self.imgsz)
+        self.priority_model_path = str(self.priority_model_path).strip()
+        self.ambulance_conf = float(self.ambulance_conf)
+        if not (0.0 <= self.ambulance_conf <= 1.0):
+            raise ValueError(f"ambulance_conf must be between 0.0 and 1.0, got {self.ambulance_conf}")
+        self.topology = str(self.topology).strip().lower()
 
     def validate(self) -> None:
         """Explicitly validate configuration parameters."""
@@ -90,32 +98,10 @@ class TraffiqConfig:
         """Convert configuration to dictionary."""
         return asdict(self)
 
-    def copy_with(self, **kwargs: Any) -> TraffiqConfig:
-        """Create a new TraffiqConfig instance with updated values."""
-        current = self.to_dict()
-        current.update(kwargs)
-        return TraffiqConfig(**current)
-
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> TraffiqConfig:
         """Construct TraffiqConfig from dictionary, filtering out unknown keys."""
-        valid_keys = {
-            "camera_index",
-            "frame_width",
-            "frame_height",
-            "device",
-            "model_path",
-            "confidence_threshold",
-            "tripwire_ratio",
-            "fine_amount",
-            "signal_duration",
-            "output_dir",
-            "db_path",
-            "no_gui",
-            "max_frames",
-            "tracker",
-            "imgsz",
-        }
+        valid_keys = {f.name for f in fields(cls)}
         filtered = {k: v for k, v in data.items() if k in valid_keys and v is not None}
         return cls(**filtered)
 

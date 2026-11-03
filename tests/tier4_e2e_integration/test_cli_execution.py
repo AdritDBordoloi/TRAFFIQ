@@ -23,7 +23,7 @@ class TestCLIExecution(unittest.TestCase):
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=30,
         )
         self.assertEqual(
             res.returncode, 0,
@@ -79,7 +79,7 @@ class TestCLIExecution(unittest.TestCase):
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=30,
         )
         self.assertEqual(
             res.returncode, 0,

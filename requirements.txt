@@ -11,12 +11,12 @@ torchvision>=0.15.0
 
 # Numerical & Utilities
 numpy>=1.24.0
-Pillow>=9.5.0
-PyYAML>=6.0
+
+# Web Dashboard (traffiq.web / run_dashboard.py)
+Flask>=2.2.0
 
 # Code Knowledge Graph Tooling
 graphifyy>=0.1.0
 
 # Testing & Quality Assurance
 pytest>=7.4.0
-pytest-cov>=4.1.0

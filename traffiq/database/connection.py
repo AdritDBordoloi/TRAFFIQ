@@ -6,8 +6,6 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from contextlib import contextmanager
-from typing import Generator, Optional
 
 _ADAPTERS_REGISTERED = False
 _LOCK = threading.Lock()
@@ -80,41 +78,6 @@ def create_connection(
     return conn
 
 
-class ConnectionPool:
-    """
-    Thread-local connection factory ensuring thread isolation and safe reuse.
-    """
-
-    def __init__(self, db_path: str = "traffiq_enforcement.db") -> None:
-        self.db_path = db_path
-        self._local = threading.local()
-
-    def get_connection(self) -> sqlite3.Connection:
-        """Retrieve or create a thread-local SQLite connection."""
-        conn = getattr(self._local, "conn", None)
-        if conn is None:
-            conn = create_connection(self.db_path)
-            self._local.conn = conn
-        else:
-            # Verify existing connection is alive
-            try:
-                conn.execute("SELECT 1")
-            except (sqlite3.ProgrammingError, sqlite3.OperationalError):
-                conn = create_connection(self.db_path)
-                self._local.conn = conn
-        return conn
-
-    def close(self) -> None:
-        """Close thread-local connection if open."""
-        conn = getattr(self._local, "conn", None)
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-            self._local.conn = None
-
-
 def get_connection(
     db_path: str = "traffiq_enforcement.db",
     timeout: float = 30.0,
@@ -128,25 +91,6 @@ def get_connection(
         timeout=timeout,
         check_same_thread=check_same_thread,
     )
-
-
-@contextmanager
-def db_transaction(
-    db_path: str = "traffiq_enforcement.db",
-) -> Generator[sqlite3.Connection, None, None]:
-    """
-    Context manager providing a transactional SQLite connection.
-    Commits on successful block completion, rolls back on exception.
-    """
-    conn = create_connection(db_path=db_path)
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 
 # Alias for test suite compatibility

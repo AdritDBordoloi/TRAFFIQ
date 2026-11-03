@@ -3,50 +3,9 @@
 ## Architecture
 The TRAFFIQ system is decomposed into a modular Python package (`traffiq/`) with decoupled submodules, a unified CLI launcher (`main.py`), tooling integrations, and a 4-tier E2E testing harness:
 
-```
-TRAFFIQ/
-├── main.py                     # Unified CLI entrypoint (traffiq.cli.app:main)
-├── pyproject.toml              # Modern package configuration
-├── requirements.txt            # Python dependencies (runtime + tooling + testing)
-├── LICENSE                     # MIT License (2026)
-├── CONTRIBUTING.md             # Contributor guidelines and architecture standards
-├── README.md                   # System documentation, diagrams, usage, and hardware spec
-├── .gitignore                  # Git hygiene rules
-├── traffiq/
-│   ├── __init__.py             # Package root metadata (__version__ = "1.0.0")
-│   ├── config/
-│   │   ├── __init__.py
-│   │   └── settings.py         # TraffiqConfig centralized configuration dataclass
-│   ├── database/
-│   │   ├── __init__.py
-│   │   ├── connection.py       # SQLite connection manager, adapter registration
-│   │   ├── repository.py       # RTO registry queries, challan recording with native int
-│   │   └── migration.py        # SQLite blob-to-int sanitization & verification
-│   ├── vision/
-│   │   ├── __init__.py
-│   │   ├── camera.py           # Safe CameraStream context manager (try...finally)
-│   │   ├── detector.py         # YOLO vehicle detector with CPU/CUDA device handling
-│   │   ├── tracker.py          # ByteTrack wrapper with bounded TTL trajectory cache
-│   │   └── tripwire.py         # Virtual counting tripwire & directional crossing
-│   ├── enforcement/
-│   │   ├── __init__.py
-│   │   ├── signal.py           # Traffic signal state machine (Auto + manual toggle)
-│   │   ├── violation.py        # Stop-line red light infraction evaluator
-│   │   ├── ocr.py              # License plate ROI isolation, preprocessing & EasyOCR
-│   │   └── challan.py          # Challan generator, fine rules & HUD banner alerts
-│   └── cli/
-│       ├── __init__.py
-│       └── app.py              # Argparse CLI dispatcher (diagnostics, detection, tracking, enforcement)
-├── tests/                      # Dual-mode automated test suite (pytest + unittest)
-│   ├── conftest.py             # Shared fixtures and synthetic test frames
-│   ├── tier1_unit/             # Fast logic unit tests (imports, config, math, parsing)
-│   ├── tier2_component/        # Component tests (plate ROI, preprocessing, OCR fallback, signal)
-│   ├── tier3_sanitization/     # Database integrity & memory bounds (blob sanitization, TTL cache)
-│   └── tier4_e2e_integration/  # End-to-end integration (CLI execution, repo hygiene, graphify)
-├── scripts/
-│   └── verify_all.py           # Standalone zero-dependency verification runner
-└── graphify-out/               # Generated code knowledge graph (graph.json, graph.html, report)
-```
+See **Repository Structure** in `README.md` for the current file tree (single source of truth, avoids drift).
+
+Modules added after M6 (not covered by the milestone table below): `traffiq.vision.ambulance` (OIV7 ambulance detector + `matches_ambulance_box` rule), `traffiq.vision.four_way` (`FourWayVideoProcessor`), `traffiq.enforcement.adaptive_signal` (`AdaptiveIntersectionController`), `traffiq.database.schema`, and `traffiq.web` (`DashboardEngine`, `create_app`).
 
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |

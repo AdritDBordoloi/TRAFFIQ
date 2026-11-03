@@ -6,7 +6,6 @@ Remediates binary blob serialization defects into native integer values.
 from __future__ import annotations
 
 import re
-import sqlite3
 import struct
 from typing import Optional, Tuple
 

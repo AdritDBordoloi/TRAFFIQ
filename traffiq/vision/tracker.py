@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 import numpy as np
 
-from traffiq.vision.detector import COCO_VEHICLE_CLASSES, Detection, resolve_device
+from traffiq.vision.detector import COCO_VEHICLE_CLASSES, resolve_device
 
 
 class BoundedIDSet:
@@ -46,6 +46,11 @@ class BoundedIDSet:
 
     def __iter__(self):
         return iter(self._set)
+
+    def clear(self) -> None:
+        """Remove all items."""
+        self._set.clear()
+        self._queue.clear()
 
 
 class TrajectoryCache:
@@ -152,8 +157,7 @@ class TrackedVehicle:
 class VehicleTracker:
     """
     ByteTrack-based multi-object tracker for vehicular traffic.
-    Maintains persistent trajectory history with safe frame-based TTL pruning
-    and bounded deduplication sets.
+    Maintains persistent trajectory history with safe frame-based TTL pruning.
     """
 
     def __init__(
@@ -164,7 +168,6 @@ class VehicleTracker:
         device: Union[int, str] = "0",
         classes: Optional[Union[Set[int], Sequence[int]]] = None,
         ttl: int = 30,
-        max_history: int = 10000,
         model: Optional[object] = None,
     ) -> None:
         """
@@ -177,7 +180,6 @@ class VehicleTracker:
             device: Inference device ('0', 'cpu').
             classes: COCO class IDs to track (defaults to standard vehicle classes).
             ttl: Frames of absence before an inactive track is pruned.
-            max_history: Upper bound for tracked ID deduplication memory.
             model: Optional pre-loaded YOLO model.
         """
         self.model_path = str(model_path)
@@ -197,8 +199,6 @@ class VehicleTracker:
 
         self._model = model
         self.trajectory_cache = TrajectoryCache(ttl=self.ttl)
-        self.counted_ids = BoundedIDSet(max_size=max_history)
-        self.violated_ids = BoundedIDSet(max_size=max_history)
         self._current_frame_idx = 0
 
     @property

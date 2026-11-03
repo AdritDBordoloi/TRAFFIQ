@@ -89,58 +89,15 @@ python main.py --mode diagnostics --no-gui
 
 ## Package Architecture
 
-TRAFFIQ is organized into a modular Python package located in the `traffiq/` directory:
-
-```
-TRAFFIQ/
-├── main.py                     # Unified CLI launcher entrypoint
-├── pyproject.toml              # PEP 517/621 packaging metadata
-├── requirements.txt            # Project runtime & development dependencies
-├── LICENSE                     # MIT License (2026)
-├── CONTRIBUTING.md             # Contributor guidelines
-├── README.md                   # System documentation & architectural diagrams
-├── .gitignore                  # Git hygiene rules
-├── traffiq/                    # Core modular library
-│   ├── __init__.py             # Package metadata (__version__ = "1.0.0")
-│   ├── config/                 # Centralized configuration
-│   │   ├── __init__.py
-│   │   └── settings.py         # TraffiqConfig dataclass & parameter validation
-│   ├── database/               # Database management & RTO registry
-│   │   ├── __init__.py
-│   │   ├── connection.py       # SQLite connection manager & adapter registration
-│   │   ├── repository.py       # Vehicle queries & challan logging (native int)
-│   │   └── migration.py        # In-place blob-to-int sanitization & integrity verification
-│   ├── vision/                 # Computer vision & trajectory tracking
-│   │   ├── __init__.py
-│   │   ├── camera.py           # Safe CameraStream context manager (try...finally)
-│   │   ├── detector.py         # YOLOv8 vehicle detection (GPU/CPU fallback)
-│   │   ├── tracker.py          # ByteTrack wrapper with bounded TTL trajectory cache
-│   │   └── tripwire.py         # Virtual counting stop-line & directional crossing math
-│   ├── enforcement/            # Signal, violation, OCR & challans
-│   │   ├── __init__.py
-│   │   ├── signal.py           # TrafficSignal state machine (timed cycles + manual toggle)
-│   │   ├── violation.py        # Red-light stop-line crossing evaluator
-│   │   ├── ocr.py              # License plate ROI isolation, CLAHE preprocessing, EasyOCR
-│   │   └── challan.py          # ChallanIssuer & HUD alert rendering
-│   └── cli/                    # Command-line interface dispatcher
-│       ├── __init__.py
-│       └── app.py              # Argparse CLI builder and pipeline runners
-├── tests/                      # 4-Tier comprehensive automated test suite
-│   ├── conftest.py             # Shared synthetic fixtures & test helpers
-│   ├── tier1_unit/             # Fast logic unit tests
-│   ├── tier2_component/        # Component tests (plate ROI, signal, OCR fallback)
-│   ├── tier3_sanitization/     # Database integrity & memory bounds
-│   └── tier4_e2e_integration/  # E2E CLI, repository hygiene & graphify tests
-├── scripts/
-│   └── verify_all.py           # Standalone zero-dependency acceptance verifier
-└── graphify-out/               # Code knowledge graph outputs
-```
+TRAFFIQ is a modular Python package in `traffiq/`. The authoritative file tree lives in the
+[Repository Structure](README.md#repository-structure) section of `README.md` (kept in one place to avoid drift).
 
 ### Module Boundaries & Responsibilities
 - **`traffiq.config`**: Centralizes all runtime thresholds, hardware device selection, fine amounts, and geometry into a typed `TraffiqConfig` dataclass. Never hardcode magic numbers in vision or enforcement modules.
 - **`traffiq.database`**: Interacts with SQLite (`traffiq_enforcement.db`). Strictly enforces that `track_id` values are native Python integers (`int`), never raw NumPy scalars (`np.int32` / `np.int64`).
 - **`traffiq.vision`**: Manages video capture (`CameraStream`), inference (`VehicleDetector`), multi-object tracking (`VehicleTracker`), and virtual tripwires (`VirtualTripwire`). Implements TTL eviction to prevent unbounded memory growth while preserving active trajectories.
 - **`traffiq.enforcement`**: Handles the traffic signal state machine, infraction detection, license plate ROI isolation (isolating the lower 40-50% horizontal band of vehicle bounding boxes), image preprocessing (grayscale, CLAHE, bilateral filtering), EasyOCR extraction with graceful fallback to `("UNKNOWN", 0.0)`, and on-screen HUD alerts.
+- **`traffiq.web`**: Flask REST/MJPEG dashboard (`server.py`) over a background `DashboardEngine` thread. Live violations MUST go through `ChallanIssuer` (real evidence, real `track_id`); demo triggers must stay labelled `(Demo)`.
 - **`traffiq.cli`**: Parses CLI arguments and routes execution to one of the 4 operational modes: `diagnostics`, `detection`, `tracking`, or `enforcement`.
 
 ---
