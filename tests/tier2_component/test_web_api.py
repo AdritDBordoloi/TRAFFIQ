@@ -6,12 +6,15 @@ clean JSON serialization (zero NumPy types), and demo triggers.
 from __future__ import annotations
 
 import collections
+import io
 import os
+import re
 import shutil
 import tempfile
 import unittest
 from typing import Any, Dict, List
 
+import cv2
 import numpy as np
 
 from traffiq.database.connection import create_connection, register_sqlite_adapters
@@ -38,6 +41,7 @@ class FakeDashboardEngine:
         self.signal_state = "GREEN"
         self.time_remaining = 6.2
         self.is_emergency_locked = False
+        self.source_calls: List[Any] = []
         self.events = collections.deque([
             {
                 "id": 1,
@@ -62,6 +66,18 @@ class FakeDashboardEngine:
                 },
             },
         ], maxlen=100)
+
+    def get_source(self) -> Dict[str, str]:
+        return {"kind": "camera", "label": "Webcam 0"}
+
+    def set_source(self, source: Any) -> Dict[str, str]:
+        self.source_calls.append(source)
+        if isinstance(source, int):
+            return {"kind": "camera", "label": f"Webcam {source}"}
+        return {"kind": "video", "label": os.path.basename(source)}
+
+    def wait_for_frame(self, last_seq: int, timeout: float = 1.0) -> Any:
+        return last_seq + 1, self.get_latest_frame()
 
     def get_latest_frame(self) -> bytes:
         # Return valid minimal JPEG bytes
@@ -143,6 +159,7 @@ class TestWebAPI(unittest.TestCase):
         self.db_path = os.path.join(self.test_dir, "test_web.db")
         self.violations_dir = os.path.join(self.test_dir, "violations")
         os.makedirs(self.violations_dir, exist_ok=True)
+        self.uploads_dir = os.path.join(self.test_dir, "uploads")
 
         # Initialize SQLite test database
         conn = create_connection(self.db_path)
@@ -161,6 +178,7 @@ class TestWebAPI(unittest.TestCase):
             engine=self.fake_engine,
             violations_dir=self.violations_dir,
             db_path=self.db_path,
+            uploads_dir=self.uploads_dir,
         )
         self.client = self.app.test_client()
 
@@ -231,6 +249,19 @@ class TestWebAPI(unittest.TestCase):
         self.assertIsInstance(first["fine_amount"], int)
         self.assertEqual(first["plate_number"], "AS01AB1234")
 
+    def test_challans_include_vehicle_model_for_the_dashboard(self) -> None:
+        first = self.client.get("/api/challans?limit=1").get_json()[0]
+        self.assertIn("vehicle_model", first)
+
+    def test_every_element_the_script_uses_exists_in_the_page(self) -> None:
+        """app.js stops running at the first missing element, leaving the whole dashboard frozen."""
+        script = self.client.get("/app.js").get_data(as_text=True)
+        page = self.client.get("/").get_data(as_text=True)
+        script_ids = set(re.findall(r"byId\('([^']+)'\)", script))
+        self.assertGreater(len(script_ids), 20)
+        page_ids = set(re.findall(r'\bid="([^"]+)"', page))
+        self.assertEqual(script_ids - page_ids, set())
+
     def test_challans_limit_is_validated_and_bounded(self) -> None:
         """Junk / non-positive limits must not dump the table (SQLite treats LIMIT -1 as unlimited)."""
         conn = create_connection(self.db_path)
@@ -299,6 +330,66 @@ class TestWebAPI(unittest.TestCase):
         res = self.client.post("/api/reset")
         self.assertEqual(res.status_code, 200)
         self.assertTrue(res.get_json()["success"])
+
+    # ------------------------------------------------------------------ video source
+    def _video_bytes(self) -> bytes:
+        path = os.path.join(self.test_dir, "sample.mp4")
+        writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (160, 120))
+        for _ in range(3):
+            writer.write(np.zeros((120, 160, 3), dtype=np.uint8))
+        writer.release()
+        with open(path, "rb") as f:
+            return f.read()
+
+    def _upload(self, data: bytes, filename: str):
+        return self.client.post(
+            "/api/upload",
+            data={"video": (io.BytesIO(data), filename)},
+            content_type="multipart/form-data",
+        )
+
+    def test_upload_saves_video_and_switches_source(self) -> None:
+        res = self._upload(self._video_bytes(), "street cam.mp4")
+        self.assertEqual(res.status_code, 200)
+        body = res.get_json()
+        self.assertEqual(body["video"], "street_cam.mp4")
+        self.assertTrue(os.path.isfile(os.path.join(self.uploads_dir, "street_cam.mp4")))
+        self.assertEqual(len(self.fake_engine.source_calls), 1)
+        self.assertEqual(self.client.get("/api/source").get_json()["videos"], ["street_cam.mp4"])
+
+    def test_upload_never_overwrites_or_escapes_uploads_folder(self) -> None:
+        video = self._video_bytes()
+        self._upload(video, "clip.mp4")
+        self.assertEqual(self._upload(video, "clip.mp4").get_json()["video"], "clip_1.mp4")
+        self.assertEqual(self._upload(video, "../../evil.mp4").get_json()["video"], "evil.mp4")
+        self.assertEqual(self._upload(video, "मार्ग.mp4").get_json()["video"], "video.mp4")
+        self.assertEqual(
+            sorted(os.listdir(self.uploads_dir)), ["clip.mp4", "clip_1.mp4", "evil.mp4", "video.mp4"]
+        )
+
+    def test_upload_rejects_wrong_type_and_undecodable_files(self) -> None:
+        self.assertEqual(self._upload(b"hello", "notes.txt").status_code, 400)
+        self.assertEqual(self._upload(b"not really a video", "fake.mp4").status_code, 400)
+        self.assertEqual(self.client.post("/api/upload").status_code, 400)
+        self.assertEqual(os.listdir(self.uploads_dir), [])
+        self.assertEqual(self.fake_engine.source_calls, [])
+
+    def test_select_source_only_accepts_listed_videos_and_valid_cameras(self) -> None:
+        self._upload(self._video_bytes(), "clip.mp4")
+        self.fake_engine.source_calls.clear()
+
+        ok = self.client.post("/api/source", json={"video": "clip.mp4"})
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(ok.get_json()["source"], {"kind": "video", "label": "clip.mp4"})
+
+        self.assertEqual(self.client.post("/api/source", json={"camera": 1}).get_json()["source"]["label"], "Webcam 1")
+
+        self.assertEqual(self.client.post("/api/source", json={"video": "../secret.mp4"}).status_code, 404)
+        self.assertEqual(self.client.post("/api/source", json={"video": ["clip.mp4"]}).status_code, 404)
+        self.assertEqual(self.client.post("/api/source", json={"camera": -1}).status_code, 400)
+        self.assertEqual(self.client.post("/api/source", json={"camera": True}).status_code, 400)
+        self.assertEqual(self.client.post("/api/source", json=[1]).status_code, 400)
+        self.assertEqual(len(self.fake_engine.source_calls), 2)
 
     def test_video_feed_header(self) -> None:
         """GET /video_feed returns multipart stream content type."""

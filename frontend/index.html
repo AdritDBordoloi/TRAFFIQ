@@ -3,189 +3,112 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TRAFFIQ — AI Traffic Monitoring & E-Challan Dashboard</title>
+  <title>TRAFFIQ live monitoring</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div class="app">
 
-  <!-- Fullscreen Emergency Green Corridor Banner -->
-  <div id="emergencyBanner" class="emergency-banner hidden">
-    <div class="banner-content">
-      <span class="emergency-icon">&#128657;</span>
-      <span class="emergency-text">AMBULANCE DETECTED &mdash; GREEN CORRIDOR ACTIVE</span>
-      <span class="emergency-sub">SIGNAL OVERRIDE ENGAGED &bull; INTERSECTION CLEARED</span>
-    </div>
-  </div>
-
-  <!-- Screen Border Flash Overlay (Violation = Red, Emergency = Green) -->
-  <div id="screenBorderFlash" class="screen-flash"></div>
-
-  <!-- Reconnecting Warning Badge -->
-  <div id="reconnectingBadge" class="reconnecting-badge hidden">
-    <span class="badge-dot"></span> Reconnecting to TRAFFIQ Engine...
-  </div>
-
-  <div class="dashboard-container">
-    
-    <!-- 1. Header Zone -->
-    <header class="dashboard-header">
-      <div class="header-left">
-        <div class="logo-group">
-          <span class="logo-accent">&#9889;</span>
-          <h1 class="logo-title">TRAFFIQ</h1>
+    <header class="app-header">
+      <div class="header-group">
+        <span class="wordmark">TRAFFIQ</span>
+        <span class="header-rule" aria-hidden="true"></span>
+        <div class="connection" id="connection" role="status">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span id="connectionText">Live</span>
+          <span class="mono" id="fpsDisplay">0 FPS</span>
+          <span class="connection-detail" id="detectDisplay"></span>
         </div>
-        <div class="header-divider"></div>
-        <span class="header-tagline">AI-Powered Smart Traffic Monitoring &amp; E-Challan Enforcement</span>
       </div>
 
-      <div class="header-right">
-        <div class="live-pill">
-          <span class="live-indicator"></span>
-          <span class="live-text">LIVE FEED</span>
+      <div class="header-group header-controls">
+        <span class="source-status" id="sourceStatus" role="status"></span>
+        <label for="sourceSelect">Source</label>
+        <select id="sourceSelect" class="control"></select>
+        <button id="btnUploadVideo" class="control button" type="button">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 10.5V2.5M4.75 5.5 8 2.25l3.25 3.25M2.5 13.5h11"/></svg>
+          Upload video
+        </button>
+        <input id="videoFileInput" type="file" accept="video/*,.mkv,.webm,.avi,.mov,.m4v,.wmv,.flv" hidden>
+
+        <div class="menu">
+          <button id="btnDemoMenu" class="control button" type="button" aria-expanded="false" aria-controls="demoMenu">
+            Demo
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 4.5 3 3 3-3"/></svg>
+          </button>
+          <div id="demoMenu" class="menu-panel" hidden>
+            <button id="btnSimulateViolation" class="menu-item" type="button">Simulate violation</button>
+            <button id="btnSimulateAmbulance" class="menu-item" type="button">Simulate ambulance</button>
+            <button id="btnResetCounters" class="menu-item" type="button">Reset counters</button>
+          </div>
         </div>
-        <div class="clock-display" id="clockDisplay">12:00:00 PM</div>
       </div>
     </header>
 
-    <!-- 2. Main Workspace Grid (Left Feed ~65%, Right Stats ~35%) -->
-    <main class="dashboard-main">
-      
-      <!-- Left Column: Video Feed -->
-      <section class="feed-column">
-        <div class="card feed-card">
-          <div class="feed-header">
-            <span class="feed-title">ROADWAY CAMERA &bull; INTERSECTION CAM 01</span>
-            <span class="feed-fps" id="fpsDisplay">FPS: 0.0</span>
-          </div>
-          <div class="video-wrapper">
-            <img id="videoFeed" src="/video_feed" alt="TRAFFIQ Live Stream" class="video-player">
-            <!-- Feed Watermark Overlay -->
-            <div class="feed-overlay-badge">EDGE AI ACCELERATED &bull; NVIDIA RTX 4060</div>
-          </div>
+    <main class="monitor">
+      <div class="feed">
+        <img id="videoFeed" src="/video_feed" alt="Live traffic feed with stop line, clearance exit line and tracked vehicles">
+        <div id="emergencyAlert" class="emergency-alert" role="status" hidden>
+          <span class="emergency-title" id="emergencyTitle">Ambulance: green corridor active</span>
+          <span>Signal held until it clears the exit line</span>
         </div>
-      </section>
+      </div>
 
-      <!-- Right Column: Signal + Counters + Latest Challan -->
-      <section class="stats-column">
-        
-        <!-- Signal & Countdown Widget -->
-        <div class="card signal-card">
-          <div class="signal-wrapper">
-            <div id="signalLight" class="traffic-light green">
-              <span id="signalIcon" class="signal-icon">&#10004;</span>
-            </div>
-            <div class="signal-info">
-              <div class="signal-label-row">
-                <span class="signal-heading">TRAFFIC SIGNAL</span>
-                <span id="signalLockBadge" class="lock-badge hidden">&#128274; LOCKED</span>
-              </div>
-              <div class="signal-state-text" id="signalStateText">PHASE: GREEN</div>
-              <div class="countdown-row">
-                <span class="countdown-value" id="signalCountdown">08</span>
-                <span class="countdown-unit">SECONDS REMAINING</span>
-              </div>
-            </div>
-          </div>
+      <div class="metrics">
+        <div>
+          <div class="label">Vehicles</div>
+          <div class="metric-value" id="counterVehicles">0</div>
         </div>
-
-        <!-- 4 Large Metric Cards (2x2 Grid) -->
-        <div class="metrics-grid">
-          <div class="card metric-card">
-            <div class="metric-label">TOTAL VEHICLES</div>
-            <div class="metric-value text-blue" id="counterVehicles">0</div>
-          </div>
-          <div class="card metric-card">
-            <div class="metric-label">VIOLATIONS DETECTED</div>
-            <div class="metric-value text-red" id="counterViolations">0</div>
-          </div>
-          <div class="card metric-card">
-            <div class="metric-label">EMERGENCY CORRIDORS</div>
-            <div class="metric-value text-green" id="counterEmergencies">0</div>
-          </div>
-          <div class="card metric-card">
-            <div class="metric-label">TOTAL FINES (INR)</div>
-            <div class="metric-value text-amber" id="counterFines">&#8377;0</div>
-          </div>
+        <div>
+          <div class="label">Violations</div>
+          <div class="metric-value" id="counterViolations">0</div>
         </div>
-
-        <!-- Latest Challan Card -->
-        <div class="card challan-card" id="latestChallanCard">
-          <div class="challan-header">
-            <span class="challan-title">LATEST E-CHALLAN DISPATCH</span>
-            <span class="challan-status" id="challanStatusBadge">ACTIVE</span>
-          </div>
-
-          <div class="challan-body" id="challanBody">
-            <div class="plate-preview-box">
-              <img id="challanPlateImg" src="" alt="License Plate" class="plate-crop-img hidden">
-              <div id="platePlaceholder" class="plate-placeholder">WAITING FOR INFRACTION...</div>
-            </div>
-            <div class="challan-details">
-              <div class="plate-number" id="challanPlateText">--------</div>
-              <div class="challan-meta-row">
-                <span class="meta-label">Owner:</span>
-                <span class="meta-value" id="challanOwnerText">&mdash;</span>
-              </div>
-              <div class="challan-meta-row">
-                <span class="meta-label">Vehicle:</span>
-                <span class="meta-value" id="challanModelText">&mdash;</span>
-              </div>
-              <div class="challan-meta-row">
-                <span class="meta-label">Offense:</span>
-                <span class="meta-value text-red" id="challanOffenseText">&mdash;</span>
-              </div>
-              <div class="challan-fine-badge" id="challanFineText">PENALTY: INR 1,000</div>
-            </div>
-          </div>
-
-          <!-- History Strip: Last 3 Challans -->
-          <div class="challan-history-strip">
-            <span class="history-label">RECENT:</span>
-            <div id="challanHistoryContainer" class="history-items">
-              <span class="history-empty">No recent infractions</span>
-            </div>
-          </div>
-
+        <div>
+          <div class="label">Emergency corridors</div>
+          <div class="metric-value" id="counterEmergencies">0</div>
         </div>
-
-      </section>
-
+        <div>
+          <div class="label">Fines issued</div>
+          <div class="metric-value" id="counterFines">&#8377;0</div>
+        </div>
+      </div>
     </main>
 
-    <!-- 3. Footer Pipeline & Exhibition Control Strip -->
-    <footer class="dashboard-footer">
-      <div class="pipeline-breadcrumb">
-        <span class="breadcrumb-label">PIPELINE:</span>
-        <div class="pipeline-stage active" id="stageCamera">1. Camera</div>
-        <span class="stage-arrow">&rsaquo;</span>
-        <div class="pipeline-stage" id="stageDetect">2. Detect (YOLOv8)</div>
-        <span class="stage-arrow">&rsaquo;</span>
-        <div class="pipeline-stage" id="stageTrack">3. ByteTrack</div>
-        <span class="stage-arrow">&rsaquo;</span>
-        <div class="pipeline-stage" id="stageViolation">4. Stop-Line Eval</div>
-        <span class="stage-arrow">&rsaquo;</span>
-        <div class="pipeline-stage" id="stageOcr">5. Plate OCR</div>
-        <span class="stage-arrow">&rsaquo;</span>
-        <div class="pipeline-stage" id="stageChallan">6. e-Challan DB</div>
-      </div>
+    <aside class="rail">
+      <section class="panel" aria-label="Traffic signal">
+        <div class="panel-heading">
+          <span>Signal</span>
+          <span id="signalMode">Automatic cycle</span>
+        </div>
+        <div class="signal-row">
+          <span class="signal-state" id="signalState" data-state="GREEN">GREEN</span>
+          <span class="signal-countdown" id="signalCountdownWrap"><span class="mono" id="signalCountdown">00</span><span class="signal-unit"> s</span></span>
+        </div>
+        <button id="btnToggleSignal" class="control button button-full" type="button">Toggle signal</button>
+      </section>
 
-      <div class="demo-controls">
-        <button id="btnToggleSignal" class="btn btn-secondary">&#128337; Toggle Signal</button>
-        <button id="btnSimulateViolation" class="btn btn-danger">&#9888; Simulate Violation</button>
-        <button id="btnSimulateAmbulance" class="btn btn-success">&#128657; Simulate Ambulance</button>
-        <button id="btnResetCounters" class="btn btn-outline">&#8635; Reset</button>
-      </div>
-    </footer>
+      <section class="panel" aria-label="Latest violation">
+        <div class="panel-heading">
+          <span>Latest violation</span>
+          <span class="mono" id="latestTime"></span>
+        </div>
+        <p class="empty" id="latestEmpty">No violations recorded yet.</p>
+        <div id="latestBody" hidden>
+          <img id="latestPhoto" class="evidence" alt="Evidence photo of the vehicle that crossed on red" hidden>
+          <div class="latest-row">
+            <span class="plate" id="latestPlate"></span>
+            <span class="latest-fine" id="latestFine"></span>
+          </div>
+          <div class="label" id="latestOwner"></div>
+        </div>
+      </section>
 
-  </div>
+      <section class="panel" id="earlierSection" aria-label="Earlier violations" hidden>
+        <div class="panel-heading"><span>Earlier</span></div>
+        <ul class="earlier" id="earlierList"></ul>
+      </section>
+    </aside>
 
-  <!-- Simulated SMS Notification Bubble Toast -->
-  <div id="smsNotificationToast" class="sms-toast hidden">
-    <div class="sms-icon">&#128241;</div>
-    <div class="sms-content">
-      <div class="sms-title">VAHAN / E-CHALLAN DISPATCHED</div>
-      <div class="sms-body" id="smsToastBody">Notice TRFQ-000001 sent to owner. Fine: INR 1,000.</div>
-    </div>
   </div>
 
   <script src="app.js"></script>

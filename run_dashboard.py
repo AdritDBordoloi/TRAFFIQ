@@ -13,7 +13,7 @@ import argparse
 import sys
 
 from traffiq.web.engine import DashboardEngine
-from traffiq.web.server import create_app
+from traffiq.web.server import LowLatencyRequestHandler, create_app
 
 
 def parse_args():
@@ -92,6 +92,7 @@ def main():
             threaded=True,
             debug=False,
             use_reloader=False,
+            request_handler=LowLatencyRequestHandler,
         )
     except KeyboardInterrupt:
         print("\n[INFO] Stopping TRAFFIQ Dashboard Server...")

@@ -277,12 +277,16 @@ When running with GUI windows enabled (`--no-gui` omitted):
 
 ```bash
 python run_dashboard.py --source 0 --port 8000        # http://127.0.0.1:8000  (--host, --device, --fine, --signal-duration, --auto-demo)
+python run_dashboard.py --source uploads/clip.mp4      # start on a video instead of the webcam
 python live_unified.py sample_traffic.mp4              # OpenCV window; -u opens a file picker, --no-loop stops at EOF
 ```
 
 - **Dashboard** (`traffiq/web`, `frontend/`): live MJPEG feed, telemetry (`/api/state`, `/api/events`, `/api/challans`),
   manual signal toggle, and demo triggers (`/api/demo/violation`, `/api/demo/ambulance`). Real detections are issued through the
   same `ChallanIssuer` as the CLI; demo records are labelled `(Demo)` in `challan_records` / `emergency_events`.
+- **Video source**: pick the webcam or a video from the feed header, or use **Upload Video** (`/api/source`, `/api/upload`).
+  Videos are saved to the git-ignored `uploads/` folder, up to 2 GB. Switching source resets the live counters and tracks;
+  saved challans are kept.
 - **Ambulance priority**: a second YOLOv8s-OIV7 model (`yolov8s-oiv7.pt`, class 6) promotes an overlapping car/bus/truck
   track to *Ambulance* (`traffiq/vision/ambulance.py`) and holds the signal GREEN until it clears the exit line or times out.
 - The CLI flags `--priority` / `--topology` and the `AdaptiveIntersectionController` / `FourWayVideoProcessor` classes are
