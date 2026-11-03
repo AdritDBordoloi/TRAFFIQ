@@ -3,31 +3,16 @@ Verifies that all submodules under traffiq can be imported cleanly without synta
 circular dependencies, or missing external dependencies.
 """
 
+import importlib
+import pkgutil
 import sys
 import unittest
-import importlib
 
-PACKAGE_MODULES = [
-    "traffiq",
-    "traffiq.config",
-    "traffiq.config.settings",
-    "traffiq.database",
-    "traffiq.database.connection",
-    "traffiq.database.repository",
-    "traffiq.database.migration",
-    "traffiq.vision",
-    "traffiq.vision.camera",
-    "traffiq.vision.detector",
-    "traffiq.vision.tracker",
-    "traffiq.vision.tripwire",
-    "traffiq.enforcement",
-    "traffiq.enforcement.signal",
-    "traffiq.enforcement.violation",
-    "traffiq.enforcement.ocr",
-    "traffiq.enforcement.challan",
-    "traffiq.cli",
-    "traffiq.cli.app",
-]
+import traffiq
+
+def discover_modules():
+    """Every module under traffiq/ (so newly added files can never escape the import check)."""
+    return ["traffiq"] + [m.name for m in pkgutil.walk_packages(traffiq.__path__, "traffiq.")]
 
 
 class TestPackageImports(unittest.TestCase):
@@ -85,6 +70,16 @@ class TestPackageImports(unittest.TestCase):
         for mod_name in ["traffiq.cli", "traffiq.cli.app"]:
             mod = importlib.import_module(mod_name)
             self.assertIsNotNone(mod, f"Failed importing {mod_name}")
+
+    def test_import_every_discovered_module(self):
+        """Auto-discovers all modules under traffiq/ and imports each one."""
+        failures = {}
+        for mod_name in discover_modules():
+            try:
+                importlib.import_module(mod_name)
+            except Exception as exc:  # report every failure at once
+                failures[mod_name] = repr(exc)
+        self.assertEqual(failures, {}, f"Modules failed to import: {failures}")
 
     def test_no_circular_imports(self):
         """Ensures modules can be reloaded in arbitrary order without circular import deadlocks."""

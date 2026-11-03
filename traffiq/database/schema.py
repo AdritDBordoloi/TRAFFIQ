@@ -31,11 +31,23 @@ CREATE TABLE IF NOT EXISTS challan_records (
 );
 """
 
+CREATE_EMERGENCY_EVENTS_SQL = """
+CREATE TABLE IF NOT EXISTS emergency_events (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    track_id INT NOT NULL,
+    vehicle_type TEXT NOT NULL,
+    override_duration_sec REAL NOT NULL,
+    status TEXT NOT NULL
+);
+"""
+
 CREATE_INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_challan_track_id ON challan_records (track_id);",
     "CREATE INDEX IF NOT EXISTS idx_challan_plate ON challan_records (plate_number);",
     "CREATE INDEX IF NOT EXISTS idx_challan_timestamp ON challan_records (timestamp);",
     "CREATE INDEX IF NOT EXISTS idx_vehicle_owner ON vehicle_registry (owner_name);",
+    "CREATE INDEX IF NOT EXISTS idx_emergency_track ON emergency_events (track_id);",
 ]
 
 # Standard Exhibition Seed Records (from init_db.py)
@@ -83,6 +95,17 @@ def init_schema(conn: sqlite3.Connection) -> None:
     cursor = conn.cursor()
     cursor.execute(CREATE_VEHICLE_REGISTRY_SQL)
     cursor.execute(CREATE_CHALLAN_RECORDS_SQL)
+    cursor.execute(CREATE_EMERGENCY_EVENTS_SQL)
+
+    # Ensure schema has all evidence and contact columns for compatibility
+    cursor.execute("PRAGMA table_info(challan_records)")
+    existing_cols = {row[1] for row in cursor.fetchall()}
+    for col in ["contact_number", "vehicle_model", "full_evidence_path", "crop_evidence_path", "evidence_path"]:
+        if col not in existing_cols:
+            try:
+                cursor.execute(f"ALTER TABLE challan_records ADD COLUMN {col} TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
 
     for index_stmt in CREATE_INDEXES_SQL:
         cursor.execute(index_stmt)

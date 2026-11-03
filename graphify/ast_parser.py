@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import ast
 import os
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class ASTCodeVisitor(ast.NodeVisitor):
@@ -238,7 +238,7 @@ class ASTCodeParser:
             with open(fpath, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
             tree = ast.parse(content, filename=fpath)
-        except Exception as e:
+        except Exception:
             return None, [], [], [], []
 
         docstring = ast.get_docstring(tree) or ""

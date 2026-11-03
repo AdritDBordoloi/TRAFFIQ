@@ -3,7 +3,6 @@ Verifies TraffiqConfig dataclass default values, custom parameter overrides,
 type validation, and dictionary conversion.
 """
 
-import os
 import unittest
 from dataclasses import asdict, is_dataclass
 

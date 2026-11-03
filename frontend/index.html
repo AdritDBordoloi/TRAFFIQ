@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TRAFFIQ live monitoring</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+
+    <header class="app-header">
+      <div class="header-group">
+        <span class="wordmark">TRAFFIQ</span>
+        <span class="header-rule" aria-hidden="true"></span>
+        <div class="connection" id="connection" role="status">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span id="connectionText">Live</span>
+          <span class="mono" id="fpsDisplay">0 FPS</span>
+          <span class="connection-detail" id="detectDisplay"></span>
+        </div>
+      </div>
+
+      <div class="header-group header-controls">
+        <span class="source-status" id="sourceStatus" role="status"></span>
+        <label for="sourceSelect">Source</label>
+        <select id="sourceSelect" class="control"></select>
+        <button id="btnUploadVideo" class="control button" type="button">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 10.5V2.5M4.75 5.5 8 2.25l3.25 3.25M2.5 13.5h11"/></svg>
+          Upload video
+        </button>
+        <input id="videoFileInput" type="file" accept="video/*,.mkv,.webm,.avi,.mov,.m4v,.wmv,.flv" hidden>
+
+        <div class="menu">
+          <button id="btnDemoMenu" class="control button" type="button" aria-expanded="false" aria-controls="demoMenu">
+            Demo
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 4.5 3 3 3-3"/></svg>
+          </button>
+          <div id="demoMenu" class="menu-panel" hidden>
+            <button id="btnSimulateViolation" class="menu-item" type="button">Simulate violation</button>
+            <button id="btnSimulateAmbulance" class="menu-item" type="button">Simulate ambulance</button>
+            <button id="btnResetCounters" class="menu-item" type="button">Reset counters</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="monitor">
+      <div class="feed">
+        <img id="videoFeed" src="/video_feed" alt="Live traffic feed with stop line, clearance exit line and tracked vehicles">
+        <div id="emergencyAlert" class="emergency-alert" role="status" hidden>
+          <span class="emergency-title" id="emergencyTitle">Ambulance: green corridor active</span>
+          <span>Signal held until it clears the exit line</span>
+        </div>
+      </div>
+
+      <div class="metrics">
+        <div>
+          <div class="label">Vehicles</div>
+          <div class="metric-value" id="counterVehicles">0</div>
+        </div>
+        <div>
+          <div class="label">Violations</div>
+          <div class="metric-value" id="counterViolations">0</div>
+        </div>
+        <div>
+          <div class="label">Emergency corridors</div>
+          <div class="metric-value" id="counterEmergencies">0</div>
+        </div>
+        <div>
+          <div class="label">Fines issued</div>
+          <div class="metric-value" id="counterFines">&#8377;0</div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="rail">
+      <section class="panel" aria-label="Traffic signal">
+        <div class="panel-heading">
+          <span>Signal</span>
+          <span id="signalMode">Automatic cycle</span>
+        </div>
+        <div class="signal-row">
+          <span class="signal-state" id="signalState" data-state="GREEN">GREEN</span>
+          <span class="signal-countdown" id="signalCountdownWrap"><span class="mono" id="signalCountdown">00</span><span class="signal-unit"> s</span></span>
+        </div>
+        <button id="btnToggleSignal" class="control button button-full" type="button">Toggle signal</button>
+      </section>
+
+      <section class="panel" aria-label="Latest violation">
+        <div class="panel-heading">
+          <span>Latest violation</span>
+          <span class="mono" id="latestTime"></span>
+        </div>
+        <p class="empty" id="latestEmpty">No violations recorded yet.</p>
+        <div id="latestBody" hidden>
+          <img id="latestPhoto" class="evidence" alt="Evidence photo of the vehicle that crossed on red" hidden>
+          <div class="latest-row">
+            <span class="plate" id="latestPlate"></span>
+            <span class="latest-fine" id="latestFine"></span>
+          </div>
+          <div class="label" id="latestOwner"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="earlierSection" aria-label="Earlier violations" hidden>
+        <div class="panel-heading"><span>Earlier</span></div>
+        <ul class="earlier" id="earlierList"></ul>
+      </section>
+    </aside>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

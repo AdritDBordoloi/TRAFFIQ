@@ -4,6 +4,7 @@ challan record insertion, transaction commit, and query integrity.
 """
 
 import os
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -91,11 +92,8 @@ class TestDatabaseCRUD(unittest.TestCase):
             self.mgr = OracleDatabaseManager(self.db_path)
 
     def tearDown(self):
-        if os.path.exists(self.db_path):
-            try:
-                os.remove(self.db_path)
-            except OSError:
-                pass
+        if hasattr(self, "temp_dir") and os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_lookup_known_vehicle(self):
         """Verifies querying an existing plate returns complete owner and model details."""

@@ -1,9 +1,15 @@
 """
 TRAFFIQ Enforcement Submodule:
 Automated traffic rule enforcement components including signal state control,
-red-light violation detection, license plate OCR, and e-challan generation.
+adaptive intersection control, red-light violation detection, license plate OCR, and e-challan generation.
 """
 
+from traffiq.enforcement.adaptive_signal import (
+    AdaptiveIntersectionController,
+    Approach,
+    PhaseState,
+    SignalColor,
+)
 from traffiq.enforcement.challan import ChallanIssuer
 from traffiq.enforcement.ocr import (
     INDIAN_RTO_REGEX,
@@ -37,4 +43,8 @@ __all__ = [
     "preprocess_plate",
     "read_license_plate",
     "INDIAN_RTO_REGEX",
+    "AdaptiveIntersectionController",
+    "Approach",
+    "PhaseState",
+    "SignalColor",
 ]

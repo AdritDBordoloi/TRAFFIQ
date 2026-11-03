@@ -5,6 +5,7 @@ and is fully idempotent.
 """
 
 import os
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -76,11 +77,8 @@ class TestDBMigration(unittest.TestCase):
         self.verify_fn = verify_database_integrity or oracle_verify_integrity
 
     def tearDown(self):
-        if os.path.exists(self.db_path):
-            try:
-                os.remove(self.db_path)
-            except OSError:
-                pass
+        if hasattr(self, "temp_dir") and os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_pre_migration_state_contains_blobs(self):
         """Verifies initial test database has 5 binary blob rows."""

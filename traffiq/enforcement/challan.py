@@ -87,7 +87,10 @@ class ChallanIssuer:
 
         # Save evidence image snapshot
         evidence_filename = f"violation_ID{int_track_id}_{ts_file}.jpg"
-        evidence_path = os.path.join(self.output_dir, evidence_filename)
+        base_dir = os.path.realpath(self.output_dir)
+        evidence_path = os.path.realpath(os.path.join(base_dir, evidence_filename))
+        if not evidence_path.startswith(base_dir + os.sep) and evidence_path != base_dir:
+            evidence_path = os.path.join(base_dir, evidence_filename)
 
         if vehicle_crop is not None and vehicle_crop.size > 0:
             cv2.imwrite(evidence_path, vehicle_crop)

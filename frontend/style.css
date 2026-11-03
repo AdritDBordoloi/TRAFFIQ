@@ -1,0 +1,447 @@
+/* TRAFFIQ dashboard. System fonts only, so it keeps working with no internet connection. */
+
+:root {
+  color-scheme: dark;
+
+  --ground: #0b0d10;
+  --rail: #111418;
+  --raised: #1a1e24;
+  --text: #eceef1;
+  --text-muted: #a6aeb9;
+  --rule: rgba(255, 255, 255, 0.08);
+  --rule-strong: rgba(255, 255, 255, 0.2);
+
+  --red: #ff6b63;
+  --green: #3ddc84;
+  --amber: #f5b84a;
+
+  /* The header sits on top of the video. Lower the alpha for more transparency. */
+  --header-glass: rgba(8, 10, 13, 0.55);
+  --header-height: 68px;
+  --rail-width: 340px;
+  --metrics-min-height: 104px;
+
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.label {
+  color: var(--text-muted);
+}
+
+/* Layout: the video and metrics fill the screen, with the details rail beside them */
+.app {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--rail-width);
+  height: 100vh;
+}
+
+.monitor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Header */
+.app-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  min-height: var(--header-height);
+  padding: 12px 20px;
+  background: var(--header-glass);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.header-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  min-width: 0;
+}
+
+.header-controls {
+  gap: 8px;
+}
+
+.header-controls label {
+  font-weight: 500;
+}
+
+.wordmark {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+
+.header-rule {
+  width: 1px;
+  height: 20px;
+  background: var(--rule-strong);
+}
+
+.connection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.connection .mono {
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.connection-detail {
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.connection.is-offline {
+  color: var(--amber);
+}
+
+.connection.is-offline .connection-dot {
+  background: var(--amber);
+}
+
+.source-status {
+  color: var(--amber);
+  font-weight: 500;
+}
+
+/* Controls */
+.control {
+  min-height: 44px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+}
+
+select.control {
+  max-width: 240px;
+  padding: 0 10px;
+  background: rgba(11, 13, 16, 0.6);
+}
+
+select.control option {
+  background: var(--raised);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.08);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.button-full {
+  width: 100%;
+}
+
+.control:disabled {
+  border-color: var(--rule);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.control:focus-visible,
+.menu-item:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.menu {
+  position: relative;
+}
+
+.menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  padding: 6px;
+  background: var(--raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: 8px;
+}
+
+.menu-item {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Video: the box hugs the picture, so the header always sits over it with no black band */
+.feed {
+  position: relative;
+  flex: none;
+  background: #000;
+  overflow: hidden;
+}
+
+.feed img {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Leaves room for the metrics row on short, wide screens */
+  max-height: calc(100vh - var(--metrics-min-height));
+  object-fit: contain;
+  object-position: top;
+}
+
+.emergency-alert {
+  position: absolute;
+  top: var(--header-height);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px 16px;
+  min-height: 48px;
+  padding: 10px 20px;
+  background: var(--green);
+  color: #06140c;
+  font-weight: 500;
+}
+
+.emergency-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Metrics */
+.metrics {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  align-content: center;
+  gap: 16px 24px;
+  padding: 16px 20px;
+}
+
+.metric-value {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 30px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+/* Details rail */
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  padding: calc(var(--header-height) + 18px) 20px 20px;
+  background: var(--rail);
+  border-left: 1px solid var(--rule);
+  overflow-y: auto;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.panel + .panel {
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+}
+
+.panel-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+}
+
+.signal-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.signal-state {
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.signal-state[data-state="GREEN"] { color: var(--green); }
+.signal-state[data-state="RED"] { color: var(--red); }
+.signal-state[data-state="YELLOW"] { color: var(--amber); }
+
+.signal-countdown .mono {
+  font-size: 30px;
+  font-weight: 500;
+}
+
+.signal-unit {
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+.empty {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.evidence {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  background: #000;
+  object-fit: cover;
+}
+
+.latest-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.plate {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--text);
+  color: var(--ground);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+.latest-fine {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.earlier {
+  margin: -4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.earlier li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 34px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.earlier-time {
+  color: var(--text-muted);
+}
+
+.earlier-plate {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+/* Narrow screens: everything stacks and the page scrolls */
+@media (max-width: 860px) {
+  .app {
+    display: block;
+    height: auto;
+  }
+
+  .app-header {
+    position: relative;
+    background: var(--ground);
+  }
+
+  .feed img {
+    max-height: none;
+  }
+
+  .emergency-alert {
+    position: static;
+  }
+
+  .rail {
+    padding-top: 20px;
+    border-left: 0;
+    border-top: 1px solid var(--rule);
+    overflow-y: visible;
+  }
+}

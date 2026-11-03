@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 import numpy as np
 
 from traffiq.enforcement.signal import SignalState

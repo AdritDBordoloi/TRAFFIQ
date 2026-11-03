@@ -4,6 +4,7 @@ are strictly stored as SQLite INTEGER, never as raw binary BLOB buffers.
 """
 
 import os
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -39,11 +40,8 @@ class TestDBSerialization(unittest.TestCase):
         init_test_database(self.db_path)
 
     def tearDown(self):
-        if os.path.exists(self.db_path):
-            try:
-                os.remove(self.db_path)
-            except OSError:
-                pass
+        if hasattr(self, "temp_dir") and os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_native_python_int_serialization(self):
         """Verifies native Python int is stored as SQLite INTEGER."""

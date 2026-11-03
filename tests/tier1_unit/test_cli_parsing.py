@@ -4,7 +4,6 @@ operational flags (--fine, --source, --conf, --no-gui, --device, --max-frames),
 and rejection of invalid choices.
 """
 
-import sys
 import unittest
 import argparse
 

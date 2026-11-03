@@ -18,23 +18,21 @@ Covers:
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import sqlite3
 import struct
 import tempfile
 import unittest
-from typing import Any
 
 import numpy as np
 
 # TRAFFIQ imports
 from traffiq.config.settings import TraffiqConfig
-from traffiq.database.connection import create_connection, register_sqlite_adapters
-from traffiq.database.migration import decode_track_id_blob, migrate_legacy_blobs, verify_integrity
+from traffiq.database.connection import register_sqlite_adapters
+from traffiq.database.migration import decode_track_id_blob
 from traffiq.database.repository import DatabaseManager, record_challan
-from traffiq.enforcement.ocr import PlateExtractor, clean_plate_text, extract_plate_roi, is_valid_rto_plate, read_license_plate
-from traffiq.vision.tripwire import VirtualTripwire, calculate_centroid, check_line_crossing
+from traffiq.enforcement.ocr import PlateExtractor, extract_plate_roi, read_license_plate
+from traffiq.vision.tripwire import calculate_centroid, check_line_crossing
 
 
 class TestDatabaseAdversarial(unittest.TestCase):

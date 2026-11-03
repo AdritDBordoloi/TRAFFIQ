@@ -29,7 +29,12 @@ import os
 import sys
 import re
 import sqlite3
-import winsound
+import queue
+import ctypes
+try:
+    import winsound
+except ImportError:
+    winsound = None
 import threading
 from datetime import datetime
 import torch
@@ -46,8 +51,10 @@ import easyocr
 
 def init_unified_db():
     """Initializes SQLite schema for vehicle registry, challans, and emergency events."""
-    conn = sqlite3.connect("traffiq_enforcement.db")
+    conn = sqlite3.connect("traffiq_enforcement.db", timeout=30.0)
     cursor = conn.cursor()
+    cursor.execute("PRAGMA journal_mode = WAL;")
+    cursor.execute("PRAGMA synchronous = NORMAL;")
 
     # 1. RTO Registry Table (Simulating government vehicle database)
     cursor.execute("""
@@ -229,14 +236,35 @@ def compute_box_iomin(boxA, boxB):
     return interArea / float(minArea) if minArea > 0 else 0.0
 
 
-def play_emergency_alert():
-    """Plays emergency siren/beep in a background thread without stalling video processing."""
+_last_emergency_alert_time = 0.0
+_alert_lock = threading.Lock()
+
+
+def play_emergency_alert(cooldown: float = 2.0):
+    """Plays emergency siren/beep in a background thread without stalling video processing, rate-limited by cooldown."""
+    global _last_emergency_alert_time
+    now = time.time()
+    with _alert_lock:
+        if now - _last_emergency_alert_time < cooldown:
+            return
+        _last_emergency_alert_time = now
+
     def _run():
-        try:
-            winsound.Beep(1500, 350)
-        except Exception:
-            pass
+        if winsound is not None:
+            try:
+                winsound.Beep(1500, 350)
+            except Exception:
+                pass
     threading.Thread(target=_run, daemon=True).start()
+
+
+_letterbox_transformer = None
+
+def get_letterbox_transformer():
+    global _letterbox_transformer
+    if _letterbox_transformer is None:
+        _letterbox_transformer = LetterBox(640)
+    return _letterbox_transformer
 
 
 def detect_ambulances_oiv7(oiv7_model, frame, device, conf_thres=0.08, iou_thres=0.45):
@@ -249,7 +277,7 @@ def detect_ambulances_oiv7(oiv7_model, frame, device, conf_thres=0.08, iou_thres
     By using multi_label=True NMS, Class 6 (Ambulance) is preserved and accurately localized.
     """
     h_orig, w_orig = frame.shape[:2]
-    img_lb = LetterBox(640)(image=frame)
+    img_lb = get_letterbox_transformer()(image=frame)
     t_img = torch.from_numpy(img_lb).permute(2, 0, 1).float().unsqueeze(0).to(device) / 255.0
 
     with torch.no_grad():
@@ -301,10 +329,44 @@ def check_vehicle_emergency_text(crop, ocr_reader):
     return False, None, 0.0
 
 
+# Background Threaded Emergency OCR Engine
+_emergency_ocr_queue = queue.Queue(maxsize=16)
+_promoted_emergency_tracks = {}  # {track_id: (keyword, conf)}
+_ocr_worker_started = False
+_ocr_worker_lock = threading.Lock()
+
+
+def start_emergency_ocr_worker(ocr_reader):
+    """Launches non-blocking background OCR thread for secondary ambulance text validation."""
+    global _ocr_worker_started
+    with _ocr_worker_lock:
+        if not _ocr_worker_started:
+            def _worker():
+                while True:
+                    try:
+                        item = _emergency_ocr_queue.get()
+                        if item is None:
+                            break
+                        t_id, crop = item
+                        has_text, kw, t_score = check_vehicle_emergency_text(crop, ocr_reader)
+                        if has_text:
+                            _promoted_emergency_tracks[t_id] = (kw, t_score)
+                            print(f"[EMERGENCY OCR CONFIRMED] Track #{t_id} verified by text '{kw}' (conf: {int(t_score * 100)}%)")
+                    except Exception:
+                        pass
+                    finally:
+                        _emergency_ocr_queue.task_done()
+
+            t = threading.Thread(target=_worker, daemon=True, name="EmergencyOCRWorker")
+            t.start()
+            _ocr_worker_started = True
+
+
 def lookup_vehicle_owner(plate_number):
     """Matches detected plate against the RTO database."""
-    conn = sqlite3.connect("traffiq_enforcement.db")
+    conn = sqlite3.connect("traffiq_enforcement.db", timeout=30.0)
     cursor = conn.cursor()
+    cursor.execute("PRAGMA journal_mode = WAL;")
 
     # 1. Exact match
     cursor.execute("""
@@ -316,11 +378,12 @@ def lookup_vehicle_owner(plate_number):
 
     # 2. Substring fallback (handles slight OCR prefixes/suffixes)
     if not row and len(plate_number) >= 4:
+        escaped_plate = plate_number.replace("/", "//").replace("%", "/%").replace("_", "/_")
         cursor.execute("""
             SELECT owner_name, contact_number, vehicle_model, registration_city 
             FROM vehicle_registry 
-            WHERE plate_number LIKE ?
-        """, (f"%{plate_number}%",))
+            WHERE plate_number LIKE ? ESCAPE '/'
+        """, (f"%{escaped_plate}%",))
         row = cursor.fetchone()
 
     conn.close()
@@ -348,8 +411,9 @@ def issue_challan(track_id, plate, owner_data, full_img_path, crop_img_path, veh
     fine_amount = 1000  # Fine amount in INR
 
     # 1. Insert into SQLite Database
-    conn = sqlite3.connect("traffiq_enforcement.db")
+    conn = sqlite3.connect("traffiq_enforcement.db", timeout=30.0)
     cursor = conn.cursor()
+    cursor.execute("PRAGMA journal_mode = WAL;")
     cursor.execute("""
     INSERT INTO challan_records (
         timestamp, track_id, plate_number, owner_name, contact_number, 
@@ -399,8 +463,9 @@ def issue_challan(track_id, plate, owner_data, full_img_path, crop_img_path, veh
 def log_emergency_event(track_id, vehicle_type, duration, status):
     """Logs an emergency priority event to the SQLite database."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    conn = sqlite3.connect("traffiq_enforcement.db")
+    conn = sqlite3.connect("traffiq_enforcement.db", timeout=30.0)
     cursor = conn.cursor()
+    cursor.execute("PRAGMA journal_mode = WAL;")
     cursor.execute("""
     INSERT INTO emergency_events (timestamp, track_id, vehicle_type, override_duration_sec, status)
     VALUES (?, ?, ?, ?, ?)
@@ -503,6 +568,7 @@ def select_video_source(cli_source=None, force_upload=False):
 # ============================================================================
 
 def run_unified_system(source=0, loop=True):
+    global _promoted_emergency_tracks
     init_unified_db()
 
     # 1. Primary Traffic Tracker: YOLOv8s COCO (Sharp car, motorcycle, bus, truck, bicycle detection)
@@ -519,13 +585,14 @@ def run_unified_system(source=0, loop=True):
     # 2. Emergency Priority Detector: YOLOv8s Open Images V7 (Multi-Label Native Ambulance Engine)
     print("[INFO] Loading Emergency Priority Detector: YOLOv8s-OIV7 (Ambulance)...")
     oiv7_model = YOLO("yolov8s-oiv7.pt")
-    device = torch.device(0 if torch.cuda.is_available() else "cpu")
+    device_str = 0 if torch.cuda.is_available() else "cpu"
+    device = torch.device(device_str)
     oiv7_model.to(device)
     print(f"[INFO] Emergency Priority Detector loaded on {device} (Multi-Label NMS active, Class 6: Ambulance).")
 
     # 3. EasyOCR GPU Engine
-    print("[INFO] Initializing EasyOCR GPU Engine...")
-    ocr_reader = easyocr.Reader(['en'], gpu=True)
+    print(f"[INFO] Initializing EasyOCR Engine (GPU={torch.cuda.is_available()})...")
+    ocr_reader = easyocr.Reader(['en'], gpu=torch.cuda.is_available())
 
     # 4. Video Source Setup (Supports Webcam Index or Video File Path)
     is_video_file = False
@@ -554,11 +621,27 @@ def run_unified_system(source=0, loop=True):
         video_fps = 30.0
     target_frame_time = 1.0 / video_fps
 
+    # Start non-blocking background OCR thread
+    start_emergency_ocr_worker(ocr_reader)
+
+    # Windows high-precision timer (sets resolution to 1ms for fast waitKey and smooth FPS)
+    has_winmm = False
+    if hasattr(ctypes, "windll") and hasattr(ctypes.windll, "winmm"):
+        try:
+            ctypes.windll.winmm.timeBeginPeriod(1)
+            has_winmm = True
+        except Exception:
+            pass
+
     # Tracking & State Storage
     track_positions = {}
     counted_ids = set()
     violated_ids = set()
     checked_ocr_tracks = set()
+
+    frame_idx = 0
+    cached_ambulance_boxes = []
+    ambulance_cadence = 2  # Run heavy 601-class OIV7 every 2 frames with box caching
 
     # Emergency Priority State
     # Supports multiple simultaneous emergency vehicles: {track_id: {"type": str, "start_time": float, "last_seen": float}}
@@ -581,7 +664,7 @@ def run_unified_system(source=0, loop=True):
     prev_time = time.time()
     print("\n[SUCCESS] TRAFFIQ Unified Dual-Model Engine Active.")
     print("[INFO] Primary Tracker: YOLOv8s COCO (Cars, Bikes, Buses, Trucks)")
-    print("[INFO] Priority Engine: YOLOv8s OIV7 (Native Ambulance Detection)")
+    print("[INFO] Priority Engine: YOLOv8s OIV7 (Native Ambulance Detection, 2-frame cadence)")
     print("[CONTROLS] Press 't' to toggle Signal manually (disabled during emergency) | 'q' to quit.\n")
 
     while True:
@@ -596,6 +679,13 @@ def run_unified_system(source=0, loop=True):
             else:
                 break
 
+        # Optimize frame resolution for edge processing (cap width to 1280 to prevent massive 1080p/4K stall)
+        if frame.shape[1] > 1280:
+            scale_factor = 1280.0 / frame.shape[1]
+            new_h = int(frame.shape[0] * scale_factor)
+            frame = cv2.resize(frame, (1280, new_h), interpolation=cv2.INTER_LINEAR)
+
+        frame_idx += 1
         height, width, _ = frame.shape
         stop_line_y = int(height * 0.55)    # 55% frame height stop line
         exit_line_y = int(height * 0.72)    # 72% frame height exit clearance line
@@ -614,20 +704,22 @@ def run_unified_system(source=0, loop=True):
             classes=list(COCO_TRAFFIC_CLASSES.keys()),
             conf=0.25,
             imgsz=640,
-            device=0,
+            device=device_str,
             verbose=False
         )[0]
 
         # --------------------------------------------------------------------
         # 2. EMERGENCY DETECTION (YOLOv8s OIV7 Multi-Label Native Ambulance Engine)
         # --------------------------------------------------------------------
-        ambulance_boxes = detect_ambulances_oiv7(
-            oiv7_model,
-            frame,
-            device=device,
-            conf_thres=min_emergency_conf,
-            iou_thres=0.45
-        )
+        if frame_idx % ambulance_cadence == 0:
+            cached_ambulance_boxes = detect_ambulances_oiv7(
+                oiv7_model,
+                frame,
+                device=device,
+                conf_thres=min_emergency_conf,
+                iou_thres=0.45
+            )
+        ambulance_boxes = cached_ambulance_boxes
 
         # --------------------------------------------------------------------
         # 3. BOUNDING BOX FUSION & MULTI-CUE EMERGENCY PROMOTION
@@ -655,6 +747,13 @@ def run_unified_system(source=0, loop=True):
                     cls_name = active_emergency_vehicles[track_id]["type"]
                     emergency_conf = 0.95
 
+                # Priority Rule 1.5: Asynchronously confirmed by emergency OCR worker
+                elif track_id in _promoted_emergency_tracks:
+                    kw, t_score = _promoted_emergency_tracks[track_id]
+                    is_emergency = True
+                    cls_name = "Ambulance"
+                    emergency_conf = t_score
+
                 # Priority Rule 2: Motor vehicles (Car, Bus, Truck) matched with OIV7 multi-label ambulance detector
                 elif cls_name in ["Car", "Bus", "Truck"]:
                     for idx, (amb_xyxy, amb_conf) in enumerate(ambulance_boxes):
@@ -667,18 +766,14 @@ def run_unified_system(source=0, loop=True):
                             matched_amb_indices.add(idx)
                             break
 
-                    # Priority Rule 3: Secondary OCR verification for unconfirmed vehicles approaching intersection
+                    # Priority Rule 3: Secondary non-blocking asynchronous OCR verification
                     if not is_emergency and track_id not in checked_ocr_tracks and cy < exit_line_y:
                         checked_ocr_tracks.add(track_id)
-                        bx1, by1 = max(0, box[0]), max(0, box[1])
-                        bx2, by2 = min(width, box[2]), min(height, box[3])
-                        v_crop = frame[by1:by2, bx1:bx2]
-                        has_text, kw, t_score = check_vehicle_emergency_text(v_crop, ocr_reader)
-                        if has_text:
-                            is_emergency = True
-                            cls_name = "Ambulance"
-                            emergency_conf = t_score
-                            print(f"[EMERGENCY OCR CONFIRMED] Track #{track_id} verified by text '{kw}' (conf: {int(t_score * 100)}%)")
+                        if not _emergency_ocr_queue.full():
+                            bx1, by1 = max(0, box[0]), max(0, box[1])
+                            bx2, by2 = min(width, box[2]), min(height, box[3])
+                            if (by2 - by1) >= 40 and (bx2 - bx1) >= 40:
+                                _emergency_ocr_queue.put_nowait((track_id, frame[by1:by2, bx1:bx2].copy()))
 
                 frame_detections.append({
                     "box": (box[0], box[1], box[2], box[3]),
@@ -805,12 +900,15 @@ def run_unified_system(source=0, loop=True):
                     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
                     # Dedicated per-vehicle evidence directory
-                    vehicle_dir = f"violations/vehicle_ID{t_id}_{timestamp_str}"
+                    base_violations_dir = os.path.realpath("violations")
+                    vehicle_dir = os.path.realpath(os.path.join(base_violations_dir, f"vehicle_ID{int(t_id)}_{timestamp_str}"))
+                    if not vehicle_dir.startswith(base_violations_dir + os.sep) and vehicle_dir != base_violations_dir:
+                        vehicle_dir = os.path.join(base_violations_dir, f"vehicle_ID{int(t_id)}_{timestamp_str}")
                     os.makedirs(vehicle_dir, exist_ok=True)
 
                     # 1. Semi close-up vehicle photo centered on subject
                     vehicle_semi_crop = get_vehicle_semi_crop(frame, box)
-                    vehicle_evidence_path = f"{vehicle_dir}/vehicle_image.jpg"
+                    vehicle_evidence_path = os.path.join(vehicle_dir, "vehicle_image.jpg")
                     if vehicle_semi_crop.size > 0:
                         cv2.imwrite(vehicle_evidence_path, vehicle_semi_crop)
                     else:
@@ -823,19 +921,23 @@ def run_unified_system(source=0, loop=True):
                     crop_x1 = max(0, x1 - 10)
                     crop_x2 = min(width, x2 + 10)
                     plate_crop = frame[crop_y1:crop_y2, crop_x1:crop_x2]
-                    plate_crop_path = f"{vehicle_dir}/plate_crop.jpg"
+                    plate_crop_path = os.path.join(vehicle_dir, "plate_crop.jpg")
 
                     detected_plate = "UNKNOWN"
                     if plate_crop.size > 0:
                         cv2.imwrite(plate_crop_path, plate_crop)
-                        ocr_data = ocr_reader.readtext(plate_crop)
-                        candidates = []
-                        for (_, text, prob) in ocr_data:
-                            cleaned = clean_plate_text(text)
-                            if len(cleaned) >= 4 and prob > 0.3:
-                                candidates.append(cleaned)
-                        if candidates:
-                            detected_plate = max(candidates, key=len)
+                        try:
+                            ocr_data = ocr_reader.readtext(plate_crop)
+                            candidates = []
+                            for (_, text, prob) in ocr_data:
+                                cleaned = clean_plate_text(text)
+                                if len(cleaned) >= 4 and prob > 0.3:
+                                    candidates.append(cleaned)
+                            if candidates:
+                                detected_plate = max(candidates, key=len)
+                        except Exception as e:
+                            print(f"[WARN] EasyOCR plate reading failed for Track #{t_id}: {e}")
+                            detected_plate = "UNKNOWN"
 
                     # 3. RTO Database lookup & E-Challan generation
                     owner_info = lookup_vehicle_owner(detected_plate)
@@ -855,11 +957,18 @@ def run_unified_system(source=0, loop=True):
                     }
                     banner_display_time = time.time()
 
-        # Clean expired track positions
+        # Clean expired track positions while retaining active tracks
         if len(track_positions) > 500:
-            track_positions.clear()
+            active_ids = {det["track_id"] for det in frame_detections}
+            track_positions = {t: pos for t, pos in track_positions.items() if t in active_ids}
         if len(checked_ocr_tracks) > 500:
-            checked_ocr_tracks.clear()
+            active_ids = {det["track_id"] for det in frame_detections}
+            checked_ocr_tracks = {t for t in checked_ocr_tracks if t in active_ids}
+        if len(_promoted_emergency_tracks) > 200:
+            active_ids = {det["track_id"] for det in frame_detections}
+            for t in list(_promoted_emergency_tracks.keys()):
+                if t not in active_ids:
+                    _promoted_emergency_tracks.pop(t, None)
 
         # --------------------------------------------------------------------
         # 6. VISUAL HUD OVERLAYS & BOUNDING BOXES
@@ -954,11 +1063,13 @@ def run_unified_system(source=0, loop=True):
 
         cv2.imshow("TRAFFIQ - Unified Enforcement & Priority System", frame)
 
-        # Frame pacing for video files to match natural playback speed
+        # Precise frame pacing for video files to match natural playback speed
         if is_video_file:
             process_duration = time.time() - frame_start_time
             sleep_needed = target_frame_time - process_duration
-            wait_time = max(1, int(sleep_needed * 1000)) if sleep_needed > 0 else 1
+            if sleep_needed > 0.002:
+                time.sleep(sleep_needed - 0.001)
+            wait_time = 1
         else:
             wait_time = 1
 
@@ -976,6 +1087,11 @@ def run_unified_system(source=0, loop=True):
 
     cap.release()
     cv2.destroyAllWindows()
+    if has_winmm:
+        try:
+            ctypes.windll.winmm.timeEndPeriod(1)
+        except Exception:
+            pass
     print("[INFO] TRAFFIQ Unified System shut down cleanly.")
 
 

@@ -73,12 +73,6 @@ def generate_graph(repo_dir: str, output_dir: str) -> int:
     parser = ASTCodeParser(repo_dir)
     ast_data = parser.parse_repository()
 
-    total_symbols = (
-        len(ast_data["modules"])
-        + len(ast_data["classes"])
-        + len(ast_data["functions"])
-        + len(ast_data["docs"])
-    )
     print(f"[graphify] Parsed {len(ast_data['modules'])} modules, {len(ast_data['classes'])} classes, {len(ast_data['functions'])} functions.")
 
     graph = CodeKnowledgeGraph(repo_dir)

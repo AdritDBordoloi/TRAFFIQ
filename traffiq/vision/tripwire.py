@@ -5,9 +5,8 @@ Calculates stop-line crossings, tracks cumulative flow counts, and renders overl
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple
 import cv2
 import numpy as np
 

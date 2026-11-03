@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import collections
 import datetime
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 try:
     import networkx as nx

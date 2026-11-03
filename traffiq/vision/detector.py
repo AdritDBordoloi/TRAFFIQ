@@ -111,6 +111,14 @@ class VehicleDetector:
         self.class_names: Dict[int, str] = {
             cid: COCO_VEHICLE_CLASSES.get(cid, "Vehicle") for cid in self.classes
         }
+        self._classes_list: List[int] = sorted(self.classes)
+
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.backends.cudnn.benchmark = True
+        except Exception:
+            pass
 
         self._model = model
 
@@ -135,14 +143,22 @@ class VehicleDetector:
         if frame is None or frame.size == 0:
             return []
 
-        results = self.model(
-            source=frame,
-            conf=self.confidence_threshold,
-            classes=list(self.classes),
-            device=self.device,
-            imgsz=self.imgsz,
-            verbose=False,
-        )[0]
+        try:
+            import torch
+            infer_context = torch.inference_mode()
+        except Exception:
+            from contextlib import nullcontext
+            infer_context = nullcontext()
+
+        with infer_context:
+            results = self.model(
+                source=frame,
+                conf=self.confidence_threshold,
+                classes=self._classes_list,
+                device=self.device,
+                imgsz=self.imgsz,
+                verbose=False,
+            )[0]
 
         detections: List[Detection] = []
         if results.boxes is not None and len(results.boxes) > 0:

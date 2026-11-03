@@ -131,10 +131,15 @@ class DatabaseManager:
         fine_amount: int = 1000,
         evidence_path: str = "",
         timestamp: Optional[str] = None,
+        contact_number: str = "",
+        vehicle_model: str = "",
+        full_evidence_path: Optional[str] = None,
+        crop_evidence_path: Optional[str] = None,
     ) -> int:
         """
         Record a traffic violation challan into challan_records.
         Strictly coerces and validates that track_id is bound as a native Python int.
+        Dynamically synchronizes with production and baseline schemas.
         Returns the inserted challan_id.
         """
         # Strict integer coercion & validation
@@ -159,24 +164,38 @@ class DatabaseManager:
         clean_owner = str(owner_name).strip()
         clean_violation = str(violation_type).strip()
         clean_evidence = str(evidence_path).strip()
+        full_ev = str(full_evidence_path).strip() if full_evidence_path is not None else clean_evidence
+        crop_ev = str(crop_evidence_path).strip() if crop_evidence_path is not None else ""
 
         with self._connection_scope() as conn:
             cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(challan_records)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+
+            col_names = ["timestamp", "track_id", "plate_number", "owner_name", "violation_type", "fine_amount"]
+            values: List[Any] = [timestamp, clean_track_id, clean_plate, clean_owner, clean_violation, clean_fine]
+
+            if "evidence_path" in existing_cols:
+                col_names.append("evidence_path")
+                values.append(clean_evidence)
+            if "contact_number" in existing_cols:
+                col_names.append("contact_number")
+                values.append(str(contact_number).strip())
+            if "vehicle_model" in existing_cols:
+                col_names.append("vehicle_model")
+                values.append(str(vehicle_model).strip())
+            if "full_evidence_path" in existing_cols:
+                col_names.append("full_evidence_path")
+                values.append(full_ev)
+            if "crop_evidence_path" in existing_cols:
+                col_names.append("crop_evidence_path")
+                values.append(crop_ev)
+
+            placeholders = ", ".join(["?"] * len(col_names))
+            cols_clause = ", ".join(col_names)
             cursor.execute(
-                """
-                INSERT INTO challan_records (
-                    timestamp, track_id, plate_number, owner_name, violation_type, fine_amount, evidence_path
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    timestamp,
-                    clean_track_id,
-                    clean_plate,
-                    clean_owner,
-                    clean_violation,
-                    clean_fine,
-                    clean_evidence,
-                ),
+                f"INSERT INTO challan_records ({cols_clause}) VALUES ({placeholders})",
+                tuple(values),
             )
             conn.commit()
             challan_id = int(cursor.lastrowid)
@@ -252,6 +271,7 @@ def record_challan(
     evidence_path: str = "",
     timestamp: Optional[str] = None,
     db_path: str = "traffiq_enforcement.db",
+    **kwargs: Any,
 ) -> int:
     """Module-level convenience function to record challan with strict int track_id."""
     mgr = DatabaseManager(db_path)
@@ -263,4 +283,5 @@ def record_challan(
         fine_amount=fine_amount,
         evidence_path=evidence_path,
         timestamp=timestamp,
+        **kwargs,
     )

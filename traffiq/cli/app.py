@@ -14,7 +14,7 @@ import argparse
 import os
 import sys
 import time
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence
 import cv2
 import numpy as np
 
@@ -215,6 +215,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Maximum number of frames to process before terminating (for testing)",
     )
+    parser.add_argument(
+        "--priority",
+        action="store_true",
+        default=False,
+        help="Reserved: accepted but not yet used by the CLI modes. Ambulance priority runs in the web dashboard (run_dashboard.py).",
+    )
+    parser.add_argument(
+        "--topology",
+        default="single",
+        help="Reserved: accepted but not yet used by the CLI modes (stored in TraffiqConfig.topology).",
+    )
 
     return parser
 
@@ -244,6 +255,7 @@ def run_diagnostics(config: TraffiqConfig) -> int:
     py_ver = sys.version.split()[0]
     print(f" Python Runtime     : {py_ver} ({sys.platform})")
     print(f" Executable Path    : {sys.executable}")
+    warnings_found = 0
 
     # 2. PyTorch & GPU Acceleration
     try:
@@ -257,9 +269,10 @@ def run_diagnostics(config: TraffiqConfig) -> int:
             cuda_ver = getattr(torch.version, "cuda", "N/A")
             print(f" GPU Acceleration   : [READY] CUDA {cuda_ver} ({gpu_name}, {vram_gb} GB VRAM)")
         else:
-            print(f" GPU Acceleration   : [INFO] CUDA Unavailable (using CPU fallback)")
+            print(" GPU Acceleration   : [INFO] CUDA Unavailable (using CPU fallback)")
     except ImportError:
-        print(f" GPU Acceleration   : [WARN] PyTorch library not detected")
+        warnings_found += 1
+        print(" GPU Acceleration   : [WARN] PyTorch library not detected")
 
     # 3. Database Schema & Integrity Check
     try:
@@ -279,16 +292,18 @@ def run_diagnostics(config: TraffiqConfig) -> int:
 
     # 4. Computer Vision Modules
     try:
-        from ultralytics import YOLO
+        from ultralytics import YOLO  # noqa: F401  (import probe)
         print(f" YOLOv8 Engine      : [READY] Ultralytics framework active (model: {config.model_path})")
     except ImportError:
-        print(f" YOLOv8 Engine      : [WARN] Ultralytics package not detected")
+        warnings_found += 1
+        print(" YOLOv8 Engine      : [WARN] Ultralytics package not detected")
 
     try:
-        import easyocr
-        print(f" EasyOCR Engine     : [READY] EasyOCR OCR module available")
+        import easyocr  # noqa: F401  (import probe)
+        print(" EasyOCR Engine     : [READY] EasyOCR OCR module available")
     except ImportError:
-        print(f" EasyOCR Engine     : [WARN] EasyOCR package not detected")
+        warnings_found += 1
+        print(" EasyOCR Engine     : [WARN] EasyOCR package not detected")
 
     # 5. Video Stream Input Probe
     try:
@@ -315,7 +330,10 @@ def run_diagnostics(config: TraffiqConfig) -> int:
     print(f" Evidence Directory : [READY] '{config.output_dir}/' writeable")
 
     print("=" * 65)
-    print(" PREFLIGHT RESULT   : ALL CRITICAL SUBSYSTEMS OPERATIONAL (0 ERRORS)")
+    if warnings_found:
+        print(f" PREFLIGHT RESULT   : COMPLETED WITH {warnings_found} WARNING(S) - see [WARN] lines above")
+    else:
+        print(" PREFLIGHT RESULT   : ALL CRITICAL SUBSYSTEMS OPERATIONAL (0 ERRORS)")
     print("=" * 65 + "\n")
     return 0
 

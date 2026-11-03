@@ -1,0 +1,32 @@
+# Paths AI coding assistants should NOT index (gitignore syntax).
+# Keeps context windows focused on source: traffiq/, tests/, scripts/, frontend/, root *.py, README.md.
+
+# Environments, caches, build output
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+
+# Generated knowledge graph (regenerate with `graphify .`; large JSON/HTML)
+graphify-out/
+
+# Runtime data & binaries (also git-ignored)
+uploads/
+violations/
+*.pt
+*.db
+*.db-wal
+*.db-shm
+*.jpg
+*.png
+*.mp4
+
+# Historical / generated reports that duplicate README.md + CONTRIBUTING.md
+AUDIT_REPORT.md
+CLEANUP_REPORT.md
+TEST_INFRA.md
+TEST_READY.md

@@ -21,6 +21,7 @@ env/
 *.db
 *.db-journal
 *.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 
@@ -30,6 +31,13 @@ violations/
 *.jpeg
 *.png
 *.bmp
+
+# Media Uploads & Video Recordings
+uploads/
+*.mp4
+*.mkv
+*.webm
+*.avi
 
 # Test & Coverage Caches
 .pytest_cache/
